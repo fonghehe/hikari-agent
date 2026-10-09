@@ -1,0 +1,11 @@
+{
+  "local-tools": {
+    "transport": "stdio",
+    "command": "node",
+    "args": ["/absolute/path/to/your/mcp-server.mjs"]
+  },
+  "http-tools": {
+    "transport": "http",
+    "url": "http://127.0.0.1:4320/mcp"
+  }
+}

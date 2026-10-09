@@ -1,0 +1,12 @@
+{
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "@hikari/desktop#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "resources/icons/**", "resources/ocr/**"]
+    }
+  }
+}

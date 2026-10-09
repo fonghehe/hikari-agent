@@ -1,0 +1,58 @@
+appId: dev.hikari.agent
+productName: Hikari
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**/*
+  - package.json
+  - '!**/*.map'
+asar: true
+asarUnpack:
+  - '**/node_modules/**'
+extraResources:
+  - from: resources/icons
+    to: icons
+  - from: resources/ocr
+    to: ocr
+  - from: resources/browser
+    to: browser
+npmRebuild: true
+# Build on the target OS/architecture using the Electron installed by the lockfile.
+electronDist: node_modules/electron/dist
+artifactName: 'Hikari-${version}-${os}-${arch}.${ext}'
+mac:
+  category: public.app-category.developer-tools
+  icon: resources/icons/hikari.icns
+  target:
+    - dmg
+    - zip
+  # Local builds use ad-hoc signing. Configure Apple credentials for public releases.
+  identity: '-'
+  hardenedRuntime: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+dmg:
+  title: Hikari
+  icon: resources/icons/hikari.icns
+  contents:
+    - x: 150
+      y: 180
+    - x: 450
+      y: 180
+      type: link
+      path: /Applications
+win:
+  icon: resources/icons/hikari.ico
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+linux:
+  icon: resources/icons/hikari.png
+  category: Development
+  target:
+    - AppImage
+    - deb
+  maintainer: Hikari contributors

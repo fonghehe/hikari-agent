@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#273047"/><stop offset="1" stop-color="#101420"/></linearGradient>
+    <linearGradient id="light" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#6879f7"/><stop offset=".55" stop-color="#a0bcff"/><stop offset="1" stop-color="#e7edff"/></linearGradient>
+    <linearGradient id="refraction" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#7564d9"/><stop offset="1" stop-color="#bec3ff"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#879aff" stop-opacity=".24"/><stop offset="1" stop-color="#879aff" stop-opacity="0"/></radialGradient>
+    <clipPath id="tile"><rect x="80" y="80" width="864" height="864" rx="204"/></clipPath>
+  </defs>
+  <rect x="80" y="80" width="864" height="864" rx="204" fill="url(#surface)"/>
+  <circle cx="554" cy="466" r="380" fill="url(#halo)" clip-path="url(#tile)"/>
+  <rect x="84" y="84" width="856" height="856" rx="200" fill="none" stroke="#afbfff" stroke-opacity=".13" stroke-width="4"/>
+  <!-- A refracted beam passing through a lens. No letter or monogram. -->
+  <path d="M236 624 498 341Q512 326 529 339L699 471Q714 485 699 501L409 778Q397 790 382 778L240 650Q226 637 236 624Z" fill="url(#refraction)" opacity=".82"/>
+  <path d="M320 562 608 267Q626 249 643 266L790 413Q807 430 788 448L486 727Q469 744 452 728L319 597Q303 581 320 562Z" fill="url(#light)"/>
+  <path d="M320 562 608 267Q626 249 643 266L704 327 390 644 319 597Q303 581 320 562Z" fill="#ffffff" opacity=".18"/>
+  <path d="m458 530 153-157 71 71-159 149Z" fill="#f1f5ff" opacity=".92"/>
+  <path d="m523 593 159-149-53 128-122 121Z" fill="#7c91f3" opacity=".4"/>
+  <circle cx="735" cy="278" r="12" fill="#dce7ff"/>
+</svg>

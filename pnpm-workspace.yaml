@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+# Keep installation and script execution on the same project-local module layout.
+enableGlobalVirtualStore: false
+allowBuilds:
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+  node-pty: true
+  tesseract.js: false

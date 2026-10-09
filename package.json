@@ -1,0 +1,47 @@
+{
+  "name": "hikari-agent-platform",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.16.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @hikari/desktop dev",
+    "build": "turbo run build",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "test:e2e": "pnpm --filter @hikari/desktop build && pnpm docs:build && playwright test",
+    "agent": "tsx apps/cli/src/index.ts",
+    "server": "pnpm --filter @hikari/server dev",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "postinstall": "node scripts/prepare-native.mjs",
+    "test:services": "tsx scripts/verify-services.ts",
+    "test:cli": "node scripts/smoke-cli.mjs",
+    "desktop:pack": "pnpm --filter @hikari/desktop run pack",
+    "desktop:dist": "pnpm --filter @hikari/desktop run dist",
+    "test:package": "node scripts/smoke-desktop-package.mjs",
+    "docs:dev": "vitepress dev docs --host 127.0.0.1",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs --host 127.0.0.1",
+    "eval:agent": "tsx scripts/evals/run.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "esbuild": "^0.25.0",
+    "oxfmt": "^0.71.0",
+    "oxlint": "^1.86.0",
+    "tsx": "^4.20.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.9.0",
+    "vitepress": "^1.6.4",
+    "vitest": "^3.2.0"
+  }
+}

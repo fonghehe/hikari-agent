@@ -1,0 +1,16 @@
+{
+  "name": "@hikari/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@hikari/agent-core": "workspace:*",
+    "@hikari/agent-runtime": "workspace:*",
+    "@hikari/model-provider": "workspace:*",
+    "@hikari/sandbox": "workspace:*",
+    "@hikari/tools": "workspace:*",
+    "@hikari/mcp": "workspace:*",
+    "@hikari/skills": "workspace:*"
+  }
+}

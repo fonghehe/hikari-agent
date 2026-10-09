@@ -1,0 +1,14 @@
+{
+  "name": "@hikari/model-provider",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@hikari/agent-core": "workspace:*",
+    "@langchain/core": "^1.2.14",
+    "@langchain/google-genai": "^2.3.2",
+    "zod": "^3.25.0",
+    "@hikari/shared": "workspace:*"
+  }
+}

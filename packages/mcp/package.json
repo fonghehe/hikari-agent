@@ -1,0 +1,15 @@
+{
+  "name": "@hikari/mcp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@hikari/agent-core": "workspace:*",
+    "@hikari/agent-runtime": "workspace:*",
+    "@hikari/sandbox": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "zod": "^3.25.0",
+    "ajv": "^8.17.1"
+  }
+}

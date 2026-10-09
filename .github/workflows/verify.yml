@@ -1,0 +1,42 @@
+name: Verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap xvfb
+      - run: pnpm --filter @hikari/desktop exec playwright install --with-deps chromium
+      - run: pnpm check
+      - run: pnpm format:check
+      - run: pnpm build
+      - run: pnpm docs:build
+      - run: pnpm test:cli
+      - run: pnpm exec playwright test
+        if: runner.os != 'Linux'
+      - run: xvfb-run -a pnpm exec playwright test
+        if: runner.os == 'Linux'
+      - run: pnpm desktop:pack
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: failure-${{ matrix.os }}
+          path: |
+            test-results
+            playwright-report
+          retention-days: 7
