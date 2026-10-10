@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { test, expect, _electron as electron } from '@playwright/test';
 import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
 import { TaskManager } from '../../packages/agent-runtime/src';
+import { wideDesktopWindow } from './desktop-window';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 let directory: string;
@@ -153,7 +154,7 @@ test('directory tree expands, collapses, uses keyboard navigation and opens the 
         filePaths: [directory],
       })) as typeof dialog.showOpenDialog;
     }, directory);
-    const page = await app.firstWindow();
+    const page = await wideDesktopWindow(app);
     await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
     const tree = page.getByRole('tree', { name: 'File tree' });
     const src = tree.getByRole('treeitem', { name: 'src', exact: true });
@@ -182,6 +183,39 @@ test('directory tree expands, collapses, uses keyboard navigation and opens the 
     await expect(page.locator('.monaco-editor')).toHaveClass(/\bvs\b/);
     await page.screenshot({ path: 'test-results/tree-light.png' });
     await expect(page.locator('.global-error')).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('wide-layout setup restores the panel after a small native desktop closes it', async () => {
+  await mkdir(path.join(directory, 'src'));
+  await writeFile(path.join(directory, 'src/index.ts'), 'export {};');
+  const app = await launch();
+  try {
+    await app.evaluate(({ dialog }, directory) => {
+      dialog.showOpenDialog = (async () => ({
+        canceled: false,
+        filePaths: [directory],
+      })) as typeof dialog.showOpenDialog;
+    }, directory);
+    const page = await app.firstWindow();
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1000, 700));
+    await expect(
+      page.getByRole('button', { name: 'Toggle right panel', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
+    // The tree exists, but role queries correctly exclude the collapsed panel.
+    await expect(
+      page.getByRole('treeitem', { name: 'src', exact: true, includeHidden: true }),
+    ).toHaveCount(1);
+    await expect(page.getByRole('treeitem', { name: 'src', exact: true })).toHaveCount(0);
+    await wideDesktopWindow(app);
+    await expect(
+      page.getByRole('complementary', { name: 'Right panel', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('treeitem', { name: 'src', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.innerWidth)).toBe(1480);
   } finally {
     await app.close();
   }

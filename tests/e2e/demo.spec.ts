@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { test, expect, _electron as electron } from '@playwright/test';
+import { wideDesktopWindow } from './desktop-window';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 let directory: string;
@@ -92,7 +93,7 @@ test('demo Plan, Execute, simulated Diff review and restored sample state', asyn
   let original = '';
   let child = '';
   try {
-    const window = await app.firstWindow();
+    const window = await wideDesktopWindow(app);
     await window.getByRole('button', { name: /Understand a codebase/ }).click();
     await expect(window.getByRole('textbox', { name: 'Task prompt', exact: true })).toHaveValue(
       '分析示例项目的架构，并给出计划。',
@@ -142,7 +143,7 @@ test('demo Plan, Execute, simulated Diff review and restored sample state', asyn
     await window.screenshot({ path: 'test-results/demo-diff.png' });
     await app.close();
     app = await launch();
-    const restored = await app.firstWindow();
+    const restored = await wideDesktopWindow(app);
     await restored.locator('.task-button').first().click();
     await expect(restored.locator('[data-event-type="agent.completed"]')).toContainText(
       '示例修复完成',
@@ -215,14 +216,19 @@ test('terminal button opens a real shell without a model, captures startup outpu
         checkboxChecked: false,
       })) as typeof dialog.showMessageBox;
     }, directory);
-    const page = await app.firstWindow();
+    const page = await wideDesktopWindow(app);
     await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
     await page.getByRole('button', { name: 'terminal', exact: true }).click();
     await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
     await expect(page.locator('.xterm')).toBeVisible();
     const input = page.locator('.xterm-helper-textarea');
     await input.focus();
-    await input.pressSequentially("printf 'FORGE_UI_%s\\n' VERIFIED", { delay: 1 });
+    await input.pressSequentially(
+      process.platform === 'win32'
+        ? "Write-Output ('FORGE_UI_' + 'VERIFIED')"
+        : "printf 'FORGE_UI_%s\\n' VERIFIED",
+      { delay: 1 },
+    );
     await input.press('Enter');
     await expect(page.locator('.terminal-panel')).toContainText('FORGE_UI_VERIFIED');
     await input.pressSequentially('exit');

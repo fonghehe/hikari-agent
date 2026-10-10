@@ -130,7 +130,7 @@ test('desktop runs the development graph through real tools and verification, th
     const page = await app.firstWindow();
     await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
     const id = await page.evaluate(
-      async ({ endpoint, node }) => {
+      async ({ endpoint, node, execution }) => {
         const api = window.hikari!;
         await api.agent.configure({
           provider: 'deepseek',
@@ -151,6 +151,7 @@ test('desktop runs the development graph through real tools and verification, th
             undefined,
             {
               mode: 'execute',
+              execution,
               workflow: 'development',
               worktreeSource: 'working-tree',
               maxSteps: 20,
@@ -171,7 +172,12 @@ test('desktop runs the development graph through real tools and verification, th
           )
         ).id;
       },
-      { endpoint: `http://127.0.0.1:${address.port}/v1`, node: process.execPath },
+      {
+        endpoint: `http://127.0.0.1:${address.port}/v1`,
+        node: process.execPath,
+        // Windows CI does not provision the Linux Docker image required for restricted execution.
+        execution: process.platform === 'win32' ? ('host' as const) : ('restricted' as const),
+      },
     );
     await expect
       .poll(

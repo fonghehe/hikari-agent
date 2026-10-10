@@ -21,7 +21,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @hikari/desktop exec playwright install --with-deps chromium
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap ripgrep
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap ripgrep apparmor
+      - name: Allow bubblewrap user namespaces on Ubuntu
+        if: runner.os == 'Linux'
+        run: |
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo apparmor_parser -r scripts/ci/bwrap.apparmor
+          fi
       - if: runner.os == 'macOS'
         run: command -v rg || brew install ripgrep
       - if: runner.os == 'Windows'

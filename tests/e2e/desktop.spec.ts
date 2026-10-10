@@ -3,6 +3,7 @@ import { tmpdir as temporaryRoot } from 'node:os';
 import path from 'node:path';
 import { test, expect, _electron as electron } from '@playwright/test';
 import { createRequire } from 'node:module';
+import { wideDesktopWindow } from './desktop-window';
 let dataDirectory: string;
 test.beforeEach(async () => {
   dataDirectory = await tempDirectory(path.join(temporaryRoot(), 'forge-desktop-data-'));
@@ -120,7 +121,7 @@ test('real IPC runs tools and preserves follow-up context in the same worktree',
         filePaths: [selected],
       })) as typeof dialog.showOpenDialog;
     }, root);
-    const page = await app.firstWindow();
+    const page = await wideDesktopWindow(app);
     await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
     await expect(page.getByRole('treeitem', { name: 'sample.txt' })).toBeVisible();
     await page.getByRole('button', { name: 'Configure model', exact: true }).click();
@@ -237,19 +238,27 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
         filePaths: [selected],
       })) as typeof dialog.showOpenDialog;
     }, root);
-    let page = await app.firstWindow();
+    let page = await wideDesktopWindow(app);
     await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
     await page.evaluate(
-      async ({ url }) => {
+      async ({ url, execution }) => {
         await globalThis.window.hikari!.agent.configure({
           provider: 'compatible',
           model: 'repair-fixture',
           apiKey: '',
           baseUrl: url,
         });
-        await globalThis.window.hikari!.agent.start('Fix the fixture test');
+        await globalThis.window.hikari!.agent.start('Fix the fixture test', false, undefined, {
+          mode: 'execute',
+          maxSteps: 30,
+          execution,
+        });
       },
-      { url: `http://127.0.0.1:${address.port}/v1` },
+      {
+        url: `http://127.0.0.1:${address.port}/v1`,
+        // Windows CI does not provision the Linux Docker image required for restricted execution.
+        execution: process.platform === 'win32' ? ('host' as const) : ('restricted' as const),
+      },
     );
     await page.getByRole('button', { name: /Fix the fixture test/ }).click();
     await page.getByRole('button', { name: 'Allow for session', exact: true }).click();
@@ -289,7 +298,7 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
       args: ['apps/desktop'],
       env: { ...process.env, HIKARI_DATA_DIR: dataDirectory },
     });
-    page = await app.firstWindow();
+    page = await wideDesktopWindow(app);
     await expect(page.getByRole('button', { name: /Fix the fixture test/ })).toBeVisible();
     expect(
       (await page.evaluate(() => globalThis.window.hikari!.agent.list())).find(

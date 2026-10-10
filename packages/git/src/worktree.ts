@@ -20,6 +20,15 @@ export interface WorktreeBaseline {
 }
 export const bufferHash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const sandbox = new LogicalSandboxProvider();
+export function sameWorktreePath(
+  left: unknown,
+  right: string,
+  paths: Pick<typeof path, 'isAbsolute' | 'sep'> = path,
+) {
+  const key = (value: string) =>
+    paths.sep === '\\' ? value.replaceAll('/', '\\').toLowerCase() : value;
+  return typeof left === 'string' && paths.isAbsolute(left) && key(left) === key(right);
+}
 export async function worktreeFiles(root: string) {
   const names = (
     await new GitService(root).run(['ls-files', '--cached', '--others', '--exclude-standard', '-z'])
@@ -114,8 +123,8 @@ export class WorktreeService {
     const data = JSON.parse(await readFile(filename, 'utf8')) as WorktreeBaseline;
     if (
       data.version !== 1 ||
-      data.root !== this.root ||
-      data.target !== path.join(this.root, '.agent', 'worktrees', id)
+      !sameWorktreePath(data.root, this.root) ||
+      !sameWorktreePath(data.target, path.join(this.root, '.agent', 'worktrees', id))
     )
       throw new AgentError('WORKTREE_METADATA', 'Worktree manifest does not match this project');
     return data;
@@ -123,7 +132,7 @@ export class WorktreeService {
   async restore(archive: string) {
     const directory = await this.metadata('worktree-archives');
     if (
-      path.dirname(archive) !== directory ||
+      !sameWorktreePath(path.dirname(archive), directory) ||
       !/^[a-zA-Z0-9-]+-\d+\.json$/.test(path.basename(archive))
     )
       throw new AgentError('WORKTREE_ARCHIVE', 'Archive is outside this project');
@@ -138,8 +147,8 @@ export class WorktreeService {
     const baseline = await this.baseline(this.valid(value.baseline.taskId));
     if (
       value.version !== 1 ||
-      value.baseline.root !== this.root ||
-      value.baseline.target !== baseline.target
+      !sameWorktreePath(value.baseline.root, this.root) ||
+      !sameWorktreePath(value.baseline.target, baseline.target)
     )
       throw new AgentError('WORKTREE_ARCHIVE', 'Archive does not match this worktree');
     const content = new Map<string, { bytes: Buffer; mode: number }>();

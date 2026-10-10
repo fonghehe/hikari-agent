@@ -1,0 +1,8 @@
+# GitHub's Ubuntu runners restrict unprivileged user namespaces through AppArmor.
+# Grant namespace creation only to bwrap; its mount and network isolation still apply.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile hikari-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}
