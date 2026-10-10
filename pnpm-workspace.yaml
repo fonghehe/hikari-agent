@@ -3,6 +3,9 @@ packages:
   - packages/*
 # Keep installation and script execution on the same project-local module layout.
 enableGlobalVirtualStore: false
+# Cached postinstall output loses Electron framework symlinks on reinstall.
+# Re-run native installers so a clean install is also a valid signed bundle.
+sideEffectsCache: false
 allowBuilds:
   electron: true
   electron-winstaller: false

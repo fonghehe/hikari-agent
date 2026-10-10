@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest';
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runProcess, LogicalSandboxProvider } from '../packages/sandbox/src';
@@ -75,6 +75,10 @@ it('copies uncommitted worktree state, delivers guarded patches and preserves cl
     await writeFile(path.join(root, 'untracked.txt'), 'keep untracked\n');
     const service = new WorktreeService(root),
       target = await service.create('working-task', 'working-tree');
+    expect(service.root).toBe(await realpath(root));
+    const baseline = await service.baseline('working-task');
+    expect(baseline.root).toBe(service.root);
+    expect(baseline.target).toBe(path.join(service.root, '.agent', 'worktrees', 'working-task'));
     expect(await readFile(path.join(target, 'a.txt'), 'utf8')).toBe('existing user edit\n');
     expect(await readFile(path.join(target, 'untracked.txt'), 'utf8')).toBe('keep untracked\n');
     await writeFile(path.join(target, 'a.txt'), 'existing user edit\nagent addition\n');

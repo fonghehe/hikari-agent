@@ -120,7 +120,10 @@ export class NativeSandboxProvider extends LogicalSandboxProvider implements San
             if (existsSync(path.join(root, '.agent', folder)))
               flags.push('--tmpfs', path.join(root, '.agent', folder));
         }
-        flags.push('--chdir', cwd, '--', command, ...args);
+        // bwrap creates ancestor directories for bind targets in its root tmpfs.
+        // Keep those outside-workspace paths read-only; the workspace and temporary
+        // bind mounts remain writable and protected metadata stays read-only.
+        flags.push('--remount-ro', '/', '--chdir', cwd, '--', command, ...args);
         return { command: executable, args: flags, env, cleanup };
       }
       // Docker Desktop provides a real Linux kernel boundary on Windows. No host fallback.

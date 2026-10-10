@@ -61,7 +61,9 @@ export async function worktreeFiles(root: string) {
 }
 export class WorktreeService {
   constructor(readonly root: string) {
-    this.root = realpathSync(root);
+    // Match fs.promises.realpath in LogicalSandboxProvider, including Windows
+    // DOS short names. The JS realpathSync implementation can retain those aliases.
+    this.root = realpathSync.native(root);
   }
   private async metadata(directory: string) {
     const target = await sandbox.resolve(this.root, `.agent/${directory}`);
