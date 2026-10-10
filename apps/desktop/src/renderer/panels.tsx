@@ -524,13 +524,18 @@ export function TerminalPanel({ taskId }: { taskId?: string }) {
         });
         const fit = new FitAddon();
         term.loadAddon(fit);
+        // Attach protocol replies before parsing any buffered startup queries.
+        const input = term.onData((data) => {
+          if (live.current?.id === id && !live.current.exited)
+            void perform(() => api().terminal.write(id, data));
+        });
         term.open(ref.current);
         const buffered = pending.current.get(id);
+        live.current = { id, terminal: term, exited: !!buffered?.exited };
         if (buffered) {
           term.write(buffered.data);
           pending.current.delete(id);
         }
-        live.current = { id, terminal: term, exited: !!buffered?.exited };
         setExited(!!buffered?.exited);
         term.options.disableStdin = !!buffered?.exited;
         term.focus();
@@ -542,9 +547,6 @@ export function TerminalPanel({ taskId }: { taskId?: string }) {
         };
         const observer = new ResizeObserver(resize);
         observer.observe(ref.current);
-        const input = term.onData((data) => {
-          if (!live.current?.exited) void perform(() => api().terminal.write(id, data));
-        });
         cleanup = () => {
           observer.disconnect();
           live.current = null;

@@ -203,6 +203,53 @@ test('settings can explicitly return to offline demo and a cancelled workspace p
   }
 });
 
+test('terminal answers buffered startup cursor and device queries through IPC', async () => {
+  const app = await launch();
+  try {
+    await app.evaluate(({ dialog, ipcMain }, directory) => {
+      dialog.showOpenDialog = (async () => ({
+        canceled: false,
+        filePaths: [directory],
+      })) as typeof dialog.showOpenDialog;
+      for (const channel of [
+        'terminal:create',
+        'terminal:write',
+        'terminal:resize',
+        'terminal:kill',
+      ])
+        ipcMain.removeHandler(channel);
+      ipcMain.handle('terminal:create', (event) => {
+        // ConPTY can query capabilities before create's IPC response reaches the UI.
+        // Split the cursor query across frames to exercise buffered stream parsing.
+        event.sender.send('terminal:data', { id: 'protocol-fixture', data: '\x1b[6' });
+        event.sender.send('terminal:data', { id: 'protocol-fixture', data: 'n\x1b[c' });
+        return 'protocol-fixture';
+      });
+      ipcMain.handle('terminal:write', (event, id: string, data: string) => {
+        if (!data.startsWith('\x1b[')) return;
+        const response = data.slice(2);
+        const message = /^\d+;\d+R$/.test(response)
+          ? 'CURSOR_QUERY_VERIFIED'
+          : /^\?[\d;]+c$/.test(response)
+            ? 'DEVICE_QUERY_VERIFIED'
+            : '';
+        if (message) event.sender.send('terminal:data', { id, data: `${message}\r\n` });
+      });
+      ipcMain.handle('terminal:resize', () => {});
+      ipcMain.handle('terminal:kill', () => {});
+    }, directory);
+    const page = await wideDesktopWindow(app);
+    await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
+    await page.getByRole('button', { name: 'terminal', exact: true }).click();
+    await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
+    await expect(page.locator('.terminal-panel')).toContainText('CURSOR_QUERY_VERIFIED');
+    await expect(page.locator('.terminal-panel')).toContainText('DEVICE_QUERY_VERIFIED');
+    await expect(page.locator('.global-error')).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});
+
 test('terminal button opens a real shell without a model, captures startup output and handles exit', async () => {
   const app = await launch();
   try {
@@ -221,6 +268,8 @@ test('terminal button opens a real shell without a model, captures startup outpu
     await page.getByRole('button', { name: 'terminal', exact: true }).click();
     await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
     await expect(page.locator('.xterm')).toBeVisible();
+    if (process.platform === 'win32')
+      await expect(page.locator('.terminal-panel')).toContainText(/PS [^>]*>/);
     const input = page.locator('.xterm-helper-textarea');
     await input.focus();
     await input.pressSequentially(

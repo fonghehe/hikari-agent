@@ -20,6 +20,9 @@ export class TerminalSessions {
       cols: 80,
       rows: 24,
       name: 'xterm-256color',
+      // The system ConPTY backend races its console-list helper against kill().
+      // The bundled backend closes the input pipe and pseudoconsole directly.
+      useConptyDll: process.platform === 'win32',
     });
     this.sessions.set(id, terminal);
     terminal.onData((data) => this.publish({ id, data: data.slice(0, 65536) }));

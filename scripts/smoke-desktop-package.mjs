@@ -81,11 +81,13 @@ try {
   await page.getByRole('button', { name: /New task/ }).click();
   await page.getByRole('button', { name: 'terminal', exact: true }).click();
   await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
+  if (process.platform === 'win32')
+    await expect(page.locator('.terminal-panel')).toContainText(/PS [^>]*>/);
   const input = page.locator('.xterm-helper-textarea');
   await input.focus();
   const command =
     process.platform === 'win32'
-      ? 'echo HIKARI_PACKAGE_VERIFIED'
+      ? "Write-Output ('HIKARI_PACKAGE_' + 'VERIFIED')"
       : "printf 'HIKARI_PACKAGE_%s\\n' VERIFIED";
   await input.pressSequentially(command, { delay: 1 });
   await input.press('Enter');
