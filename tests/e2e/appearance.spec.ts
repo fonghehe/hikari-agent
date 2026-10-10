@@ -199,8 +199,12 @@ test('wide-layout setup restores the panel after a small native desktop closes i
         filePaths: [directory],
       })) as typeof dialog.showOpenDialog;
     }, directory);
-    const page = await app.firstWindow();
+    const page = await wideDesktopWindow(app);
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1000, 700));
+    // Xvfb's native resize may arrive during renderer startup. Drive a real CSS
+    // viewport transition after the UI is ready, independent of the window manager.
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(1000);
     await expect(
       page.getByRole('button', { name: 'Toggle right panel', exact: true }),
     ).toHaveAttribute('aria-expanded', 'false');
