@@ -46,6 +46,7 @@ await writeFile(manifest, JSON.stringify(data, null, 2) + '\n');
 const config = path.join(desktop, 'release.config.json');
 try {
   await run('node', ['scripts/build.mjs'], desktop);
+  await run('node', ['scripts/check-native.mjs'], desktop);
   await run('node', ['scripts/browser-assets.mjs'], desktop);
   await writeFile(
     config,

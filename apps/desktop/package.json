@@ -8,8 +8,8 @@
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
     "icons": "node scripts/icons.mjs",
-    "pack": "node scripts/build.mjs && node scripts/browser-assets.mjs && electron-builder --dir",
-    "dist": "node scripts/build.mjs && node scripts/browser-assets.mjs && electron-builder"
+    "pack": "node scripts/build.mjs && node scripts/check-native.mjs && node scripts/browser-assets.mjs && electron-builder --dir --publish never",
+    "dist": "node scripts/build.mjs && node scripts/check-native.mjs && node scripts/browser-assets.mjs && electron-builder --publish never"
   },
   "dependencies": {
     "@hikari/agent-core": "workspace:*",

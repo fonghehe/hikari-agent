@@ -17,7 +17,10 @@ extraResources:
     to: ocr
   - from: resources/browser
     to: browser
-npmRebuild: true
+# All native dependencies use Node-API and are checked inside Electron before packing.
+# node-pty names its prebuild pty.node; electron-rebuild does not recognize it and
+# unnecessarily recompiles it against downloaded Electron headers.
+npmRebuild: false
 # Build on the target OS/architecture using the Electron installed by the lockfile.
 electronDist: node_modules/electron/dist
 artifactName: 'Hikari-${version}-${os}-${arch}.${ext}'

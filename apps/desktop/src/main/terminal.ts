@@ -38,7 +38,14 @@ export class TerminalSessions {
     return terminal;
   }
   write(id: string, data: string) {
-    this.get(id).write(data);
+    // ConPTY's legacy CR path synthesizes a key through the console keyboard map.
+    // Send VK_RETURN directly so PSReadLine receives Enter, including on CI desktops.
+    // Win32 input records are accepted by ConPTY alongside ordinary VT input.
+    const input =
+      process.platform === 'win32'
+        ? data.replaceAll('\r', '\x1b[13;28;13;1;0;1_\x1b[13;28;13;0;0;1_')
+        : data;
+    this.get(id).write(input);
   }
   resize(id: string, cols: number, rows: number) {
     this.get(id).resize(cols, rows);

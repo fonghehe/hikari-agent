@@ -1,19 +1,33 @@
 import { mkdtemp as tempDirectory, rm as removeDirectory } from 'node:fs/promises';
 import { tmpdir as temporaryRoot } from 'node:os';
 import path from 'node:path';
-import { test, expect, _electron as electron } from '@playwright/test';
+import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
 import { createRequire } from 'node:module';
 import { wideDesktopWindow } from './desktop-window';
 let dataDirectory: string;
+const liveApps = new Set<ElectronApplication>();
+const launch = async (options: Parameters<typeof electron.launch>[0]) => {
+  const app = await electron.launch(options);
+  liveApps.add(app);
+  app.process().once('exit', () => liveApps.delete(app));
+  return app;
+};
 test.beforeEach(async () => {
   dataDirectory = await tempDirectory(path.join(temporaryRoot(), 'forge-desktop-data-'));
 });
 test.afterEach(async () => {
-  await removeDirectory(dataDirectory, { recursive: true, force: true });
+  // Teardown has its own budget even if a timed-out test cannot finish its finally.
+  await Promise.all([...liveApps].map((app) => app.close()));
+  await removeDirectory(dataDirectory, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 200,
+  });
 });
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 test('desktop starts with secure preload and empty workspace', async () => {
-  const app = await electron.launch({
+  const app = await launch({
     executablePath: require('electron') as string,
     args: ['apps/desktop'],
     env: { ...process.env, HIKARI_DATA_DIR: dataDirectory },
@@ -109,7 +123,7 @@ test('real IPC runs tools and preserves follow-up context in the same worktree',
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('No test server');
-  const app = await electron.launch({
+  const app = await launch({
     executablePath: require('electron') as string,
     args: ['apps/desktop'],
     env: { ...process.env, HIKARI_DATA_DIR: dataDirectory },
@@ -163,6 +177,8 @@ test('real IPC runs tools and preserves follow-up context in the same worktree',
 });
 
 test('agent fixes a failing test through approval, patch, retest, diff undo and persistence', async () => {
+  // Two Electron launches, five model/tool turns and Monaco initialization on Windows.
+  test.setTimeout(60000);
   const { createServer } = await import('node:http');
   const { writeFile, readFile } = await import('node:fs/promises');
   const { createHash } = await import('node:crypto');
@@ -226,21 +242,25 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('No fixture address');
-  let app = await electron.launch({
+  let app = await launch({
     executablePath: require('electron') as string,
     args: ['apps/desktop'],
     env: { ...process.env, HIKARI_DATA_DIR: dataDirectory },
   });
   try {
     await app.evaluate(({ dialog }, selected) => {
-      dialog.showOpenDialog = (async () => ({
-        canceled: false,
-        filePaths: [selected],
-      })) as typeof dialog.showOpenDialog;
+      // Exercise the asynchronous picker on every OS, including a fast local machine.
+      dialog.showOpenDialog = (async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return { canceled: false, filePaths: [selected] };
+      }) as typeof dialog.showOpenDialog;
     }, root);
     let page = await wideDesktopWindow(app);
     await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
-    await page.evaluate(
+    // click() only dispatches the picker; starting via IPC before it resolves creates
+    // a chat task without file or shell tools and never reaches the approval prompt.
+    await expect(page.getByRole('treeitem', { name: 'sample.txt', exact: true })).toBeVisible();
+    const started = await page.evaluate(
       async ({ url, execution }) => {
         await globalThis.window.hikari!.agent.configure({
           provider: 'compatible',
@@ -248,7 +268,7 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
           apiKey: '',
           baseUrl: url,
         });
-        await globalThis.window.hikari!.agent.start('Fix the fixture test', false, undefined, {
+        return globalThis.window.hikari!.agent.start('Fix the fixture test', false, undefined, {
           mode: 'execute',
           maxSteps: 30,
           execution,
@@ -260,6 +280,7 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
         execution: process.platform === 'win32' ? ('host' as const) : ('restricted' as const),
       },
     );
+    expect(started.chat).toBeUndefined();
     await page.getByRole('button', { name: /Fix the fixture test/ }).click();
     await page.getByRole('button', { name: 'Allow for session', exact: true }).click();
     await expect(
@@ -293,7 +314,7 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
     await page.getByRole('button', { name: 'Undo', exact: true }).click();
     await expect.poll(() => readFile(path.join(root, 'sample.txt'), 'utf8')).toBe('one\n');
     await app.close();
-    app = await electron.launch({
+    app = await launch({
       executablePath: require('electron') as string,
       args: ['apps/desktop'],
       env: { ...process.env, HIKARI_DATA_DIR: dataDirectory },
@@ -392,7 +413,7 @@ test('Plan mode prevents writes, persists a plan and carries it into an explicit
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Missing model fixture');
-  const app = await electron.launch({
+  const app = await launch({
     executablePath: require('electron') as string,
     args: ['apps/desktop'],
     env: { ...process.env, HIKARI_DATA_DIR: dataDirectory },
