@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type IPty } from 'node-pty';
 import { LogicalSandboxProvider } from '@hikari/sandbox';
+import { windowsTerminalEnvironment } from './windows-terminal';
 export class TerminalSessions {
   private sessions = new Map<string, IPty>();
   private sandbox = new LogicalSandboxProvider();
@@ -14,9 +15,10 @@ export class TerminalSessions {
         : process.platform === 'darwin'
           ? '/bin/zsh'
           : '/bin/bash';
+    const environment = { ...this.sandbox.environment(), TERM: 'xterm-256color' };
     const terminal = spawn(shell, [], {
       cwd,
-      env: { ...this.sandbox.environment(), TERM: 'xterm-256color' },
+      env: process.platform === 'win32' ? windowsTerminalEnvironment(environment) : environment,
       cols: 80,
       rows: 24,
       name: 'xterm-256color',
@@ -38,14 +40,7 @@ export class TerminalSessions {
     return terminal;
   }
   write(id: string, data: string) {
-    // ConPTY's legacy CR path synthesizes a key through the console keyboard map.
-    // Send VK_RETURN directly so PSReadLine receives Enter, including on CI desktops.
-    // Win32 input records are accepted by ConPTY alongside ordinary VT input.
-    const input =
-      process.platform === 'win32'
-        ? data.replaceAll('\r', '\x1b[13;28;13;1;0;1_\x1b[13;28;13;0;0;1_')
-        : data;
-    this.get(id).write(input);
+    this.get(id).write(data);
   }
   resize(id: string, cols: number, rows: number) {
     this.get(id).resize(cols, rows);
