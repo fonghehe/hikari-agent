@@ -7,7 +7,11 @@ import { runProcess } from '../packages/tools/src/process';
 it('rejects nonexistent paths beneath escaping symlinks', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'forge-'));
   try {
-    await symlink(tmpdir(), path.join(root, 'link'));
+    await symlink(
+      tmpdir(),
+      path.join(root, 'link'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
     const sandbox = new LogicalSandboxProvider();
     await expect(sandbox.resolve(root, 'link/new.txt', true)).rejects.toThrow('outside workspace');
     await expect(sandbox.resolve(root, '.git/config', true)).rejects.toThrow('protected');

@@ -145,8 +145,18 @@ async function recognize(bytes: Buffer): Promise<string> {
   const source = path.resolve(path.dirname(moduleFile), '../../resources/ocr');
   const bundled =
     typeof process.resourcesPath === 'string' ? path.join(process.resourcesPath, 'ocr') : source;
-  const worker = await createWorker(['eng', 'chi_sim', 'jpn'], 1, {
-    langPath: existsSync(bundled) ? bundled : source,
+  const langPath = existsSync(bundled) ? bundled : source;
+  const languages = ['eng', 'chi_sim', 'jpn'];
+  // Tesseract 7 can leave createWorker pending when loading language data fails.
+  // Check the local files before starting a worker, including partially copied assets.
+  for (const language of languages) {
+    if (!existsSync(path.join(langPath, `${language}.traineddata.gz`)))
+      throw new Error(
+        `Missing local OCR data: ${language}.traineddata.gz. Run pnpm install or rebuild the desktop app.`,
+      );
+  }
+  const worker = await createWorker(languages, 1, {
+    langPath,
     gzip: true,
     cacheMethod: 'none',
     workerPath: require

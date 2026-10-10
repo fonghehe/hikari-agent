@@ -23,17 +23,32 @@ export class RepositoryIndexer {
   async findFiles(glob = '*', signal: AbortSignal = new AbortController().signal) {
     const result = await runProcess(
       'rg',
-      ['--files', '--hidden', '-g', glob, '-g', '!.git', '-g', '!.agent', '-g', '!node_modules'],
+      [
+        '--files',
+        '--hidden',
+        '--path-separator',
+        '/',
+        '-g',
+        glob,
+        '-g',
+        '!.git',
+        '-g',
+        '!.agent',
+        '-g',
+        '!node_modules',
+      ],
       { cwd: this.root, env: this.sandbox.environment(), signal },
     );
     if (result.exitCode > 1) throw new AgentError('RG_FAILED', result.output);
-    return result.output.trim().split('\n').filter(Boolean).slice(0, 10000);
+    return result.output.trim().split(/\r?\n/).filter(Boolean).slice(0, 10000);
   }
   async searchText(query: string, glob = '*', signal: AbortSignal = new AbortController().signal) {
     const result = await runProcess(
       'rg',
       [
         '--line-number',
+        '--path-separator',
+        '/',
         '--max-count',
         '50',
         '--glob',

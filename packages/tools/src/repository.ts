@@ -14,7 +14,7 @@ export async function projectInstructions(root: string, file = '.') {
   const rules: { path: string; text: string; truncated: boolean }[] = [];
   for (const directory of directories)
     for (const name of ['AGENTS.md', 'CLAUDE.md']) {
-      const relative = path.join(directory, name);
+      const relative = path.join(directory, name).split(path.sep).join('/');
       try {
         const filename = await sandbox.resolve(root, relative);
         if ((await stat(filename)).size > 128000) {

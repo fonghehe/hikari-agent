@@ -19,7 +19,7 @@
     "server": "pnpm --filter @hikari/server dev",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "postinstall": "node scripts/prepare-native.mjs",
+    "postinstall": "node scripts/prepare-native.mjs && node apps/desktop/scripts/ocr-assets.mjs",
     "test:services": "tsx scripts/verify-services.ts",
     "test:cli": "node scripts/smoke-cli.mjs",
     "desktop:pack": "pnpm --filter @hikari/desktop run pack",

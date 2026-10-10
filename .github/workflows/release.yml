@@ -21,7 +21,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @hikari/desktop exec playwright install --with-deps chromium
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap ripgrep
+      - if: runner.os == 'macOS'
+        run: command -v rg || brew install ripgrep
+      - if: runner.os == 'Windows'
+        run: if (!(Get-Command rg -ErrorAction SilentlyContinue)) { choco install ripgrep --yes --no-progress }
+      - run: rg --version
       - run: pnpm check
       - run: pnpm docs:build
       - run: node scripts/release-desktop.mjs

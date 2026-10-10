@@ -45,7 +45,11 @@ it('loads applicable root/nested instructions, exposes symbols and resolves loca
     const outside = await mkdtemp(path.join(tmpdir(), 'hikari-outside-'));
     try {
       await writeFile(path.join(outside, 'AGENTS.md'), 'outside');
-      await symlink(outside, path.join(root, 'escape'));
+      await symlink(
+        outside,
+        path.join(root, 'escape'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
       await expect(projectInstructions(root, 'escape/file.ts')).rejects.toThrow('outside');
     } finally {
       await rm(outside, { recursive: true, force: true });

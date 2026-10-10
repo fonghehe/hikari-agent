@@ -20,7 +20,12 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap xvfb
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap xvfb ripgrep
+      - if: runner.os == 'macOS'
+        run: command -v rg || brew install ripgrep
+      - if: runner.os == 'Windows'
+        run: if (!(Get-Command rg -ErrorAction SilentlyContinue)) { choco install ripgrep --yes --no-progress }
+      - run: rg --version
       - run: pnpm --filter @hikari/desktop exec playwright install --with-deps chromium
       - run: pnpm check
       - run: pnpm format:check

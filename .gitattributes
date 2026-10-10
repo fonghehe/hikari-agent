@@ -1,0 +1,2 @@
+# Keep source files in LF on all CI runners, including Windows.
+* text=auto eol=lf
