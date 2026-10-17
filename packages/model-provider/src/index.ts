@@ -6,6 +6,7 @@ export { DemoProvider, demoWorkspace, demoFiles, demoTools } from './demo';
 import { z } from 'zod';
 import {
   AgentError,
+  sanitizeModelRequest,
   type Message,
   type ModelProvider,
   type ModelRequest,
@@ -22,11 +23,22 @@ export interface ProviderConfig {
   authType?: 'bearer' | 'api-key';
   reasoningEffort?: 'low' | 'medium' | 'high';
   inlineReasoning?: boolean;
+  requireReasoningContent?: boolean;
 }
 const usageSchema = z.object({
   prompt_tokens: z.number().int().nonnegative(),
   completion_tokens: z.number().int().nonnegative(),
 });
+function toolInput(argumentsText: string): unknown {
+  try {
+    return JSON.parse(argumentsText) as unknown;
+  } catch {
+    throw new AgentError(
+      'INVALID_TOOL_CALL',
+      'Model returned malformed JSON tool arguments. No tools were executed. Retry with valid JSON arguments.',
+    );
+  }
+}
 const replySchema = z.object({
   usage: usageSchema.nullable().optional(),
   choices: z
@@ -49,10 +61,16 @@ const replySchema = z.object({
     )
     .min(1),
 });
-const encode = (m: Message) => ({
+const encode = (m: Message, requireReasoningContent = false) => ({
   role: m.role,
-  ...(m.role === 'assistant' && typeof m.providerData?.reasoningContent === 'string'
-    ? { reasoning_content: m.providerData.reasoningContent }
+  ...(m.role === 'assistant' &&
+  (requireReasoningContent || typeof m.providerData?.reasoningContent === 'string')
+    ? {
+        reasoning_content:
+          typeof m.providerData?.reasoningContent === 'string'
+            ? m.providerData.reasoningContent
+            : '',
+      }
     : {}),
   content: m.images?.length
     ? [
@@ -105,6 +123,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     return Math.ceil(new TextEncoder().encode(text).length / 3);
   }
   async chat(request: ModelRequest): Promise<ModelResponse> {
+    request = sanitizeModelRequest(request, [this.config.apiKey]);
     const response = await providerFetch(
       `${(this.config.baseUrl ?? 'https://api.openai.com/v1').replace(/\/$/, '')}/chat/completions`,
       {
@@ -121,7 +140,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
           ...(request.maxOutputTokens
             ? { [this.config.tokenParameter ?? 'max_tokens']: request.maxOutputTokens }
             : {}),
-          messages: request.messages.map(encode),
+          messages: request.messages.map((message) =>
+            encode(message, this.config.requireReasoningContent),
+          ),
           ...(request.tools.length
             ? { tools: request.tools.map((t) => ({ type: 'function', function: t })) }
             : {}),
@@ -148,11 +169,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
       toolCalls: (message.tool_calls ?? []).map((t) => ({
         id: t.id,
         name: t.function.name,
-        input: JSON.parse(t.function.arguments) as unknown,
+        input: toolInput(t.function.arguments),
       })),
     };
   }
   async *stream(request: ModelRequest): AsyncIterable<ModelResponse> {
+    request = sanitizeModelRequest(request, [this.config.apiKey]);
     const response = await providerFetch(
       `${(this.config.baseUrl ?? 'https://api.openai.com/v1').replace(/\/$/, '')}/chat/completions`,
       {
@@ -173,7 +195,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
           ...(this.config.includeUsage !== false
             ? { stream_options: { include_usage: true } }
             : {}),
-          messages: request.messages.map(encode),
+          messages: request.messages.map((message) =>
+            encode(message, this.config.requireReasoningContent),
+          ),
           ...(request.tools.length
             ? { tools: request.tools.map((tool) => ({ type: 'function', function: tool })) }
             : {}),
@@ -204,7 +228,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         toolCalls: (message.tool_calls ?? []).map((tool) => ({
           id: tool.id,
           name: tool.function.name,
-          input: JSON.parse(tool.function.arguments) as unknown,
+          input: toolInput(tool.function.arguments),
         })),
       };
       return;
@@ -272,7 +296,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       toolCalls: [...calls.values()].map((call) => ({
         id: z.string().min(1).parse(call.id),
         name: z.string().min(1).parse(call.name),
-        input: JSON.parse(call.arguments) as unknown,
+        input: toolInput(call.arguments),
       })),
     };
   }
@@ -363,6 +387,7 @@ export class AnthropicProvider extends OpenAICompatibleProvider {
     return response;
   }
   override async *stream(request: ModelRequest): AsyncIterable<ModelResponse> {
+    request = sanitizeModelRequest(request, [this.config.apiKey]);
     const response = await this.request(request, true);
     if (!response.headers.get('content-type')?.includes('text/event-stream')) {
       yield this.decode(await response.json());
@@ -441,11 +466,12 @@ export class AnthropicProvider extends OpenAICompatibleProvider {
       toolCalls: [...calls.values()].map((call) => ({
         id: call.id,
         name: call.name,
-        input: call.arguments ? (JSON.parse(call.arguments) as unknown) : call.input,
+        input: call.arguments ? toolInput(call.arguments) : call.input,
       })),
     };
   }
   override async chat(request: ModelRequest): Promise<ModelResponse> {
+    request = sanitizeModelRequest(request, [this.config.apiKey]);
     return this.decode(await (await this.request(request)).json());
   }
   private decode(raw: unknown): ModelResponse {

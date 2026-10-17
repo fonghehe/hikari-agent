@@ -2,7 +2,7 @@
 
 ## Connect a service
 
-Open **Model settings** at the bottom of the sidebar. Choose a provider, enter a model ID available to your account and an API key if required, then click **Connect model**. A project is optional for conversation and attachment analysis. Open a workspace for development tools.
+Open **Settings → Model settings** at the bottom of the sidebar. Choose a provider, enter a model ID available to your account and an API key if required, then click **Connect model**. A project is optional for conversation and attachment analysis. Open a workspace for development tools.
 
 Hikari includes presets for OpenAI, Azure OpenAI / Foundry, Anthropic, Google Gemini, DeepSeek, Qwen, Kimi, GLM, Doubao, MiniMax, SiliconFlow, Groq, Grok, Mistral, OpenRouter, Ollama and LM Studio. **OpenAI compatible** accepts other Chat Completions services. Provider selection supplies a starting address; you can change it for your region or private gateway.
 

@@ -18,7 +18,7 @@ Demo answers use predefined examples. File changes and checks affect sample data
 ## Work with your own project
 
 1. Click **Open workspace** and choose your project folder.
-2. Open **Model settings** at the bottom of the sidebar and [connect a model](configuration.md).
+2. Open **Settings → Model settings** at the bottom of the sidebar and [connect a model](configuration.md).
 3. Click **New task**. Choose **Plan** to explore first, or **Execute** to make changes.
 4. Describe a focused goal, such as “Find the failing checkout test, explain the cause, and fix it.”
 5. Review permission requests before approving operations.

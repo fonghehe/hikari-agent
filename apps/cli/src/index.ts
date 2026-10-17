@@ -3,9 +3,12 @@ import { runOptionsSchema, modeInstruction } from '@hikari/agent-core';
 import { registerMCPTools } from '@hikari/mcp';
 import { registerSkillTools } from '@hikari/skills';
 import { realpath } from 'node:fs/promises';
+import { prepareCapabilities, pluginMCP } from '@hikari/agent-host';
+import { handlePlatformCommand } from './platform';
 import { createInterface } from 'node:readline/promises';
 import {
   FileRunStore,
+  WorkspaceOwnership,
   registerMemoryTools,
   AgentRunner,
   ContextManager,
@@ -30,7 +33,9 @@ import {
   registerBrowserTools,
 } from '@hikari/tools';
 const [, , action, ...words] = process.argv;
-if (!['run', 'resume'].includes(action ?? '') || !words.length) {
+if (await handlePlatformCommand(action, words)) {
+  // Platform commands manage their own bounded execution lifecycle.
+} else if (!['run', 'resume'].includes(action ?? '') || !words.length) {
   console.error(
     'Usage: pnpm agent run "fix eslint errors" | pnpm agent resume TASK_ID\nEnvironment: AGENT_API_KEY, AGENT_MODEL, AGENT_BASE_URL, AGENT_PROVIDER, AGENT_WORKSPACE',
   );
@@ -107,7 +112,7 @@ if (!['run', 'resume'].includes(action ?? '') || !words.length) {
         throw new Error('This task has no valid unfinished checkpoint');
       task.status = 'interrupted';
       tasks.restore(task);
-    } else store.saveTask(task);
+    }
     task.runOptions = runOptionsSchema.parse(
       restored
         ? task.runOptions
@@ -126,84 +131,132 @@ if (!['run', 'resume'].includes(action ?? '') || !words.length) {
               : undefined,
             execution: process.env.AGENT_EXECUTION ?? 'restricted',
             allowNetwork: process.env.AGENT_NETWORK === 'true',
+            goal: process.env.AGENT_GOAL
+              ? {
+                  objective: process.env.AGENT_GOAL,
+                  maxContinuations: process.env.AGENT_GOAL_CONTINUATIONS
+                    ? Number(process.env.AGENT_GOAL_CONTINUATIONS)
+                    : 5,
+                }
+              : undefined,
           },
     );
-    console.error(`Task ${task.id} · resume with: pnpm agent resume ${task.id}`);
-    const events = new EventBus(task);
-    events.subscribe((event) => {
+    const executionRoot = task.worktree ?? root;
+    const release = new WorkspaceOwnership(executionRoot).acquire(task.id);
+    const resources: (() => Promise<void>)[] = [];
+    try {
       store.saveTask(task);
-      console.log(JSON.stringify(event));
-    });
-    const tools = new ToolRegistry();
-    const changes = new FileChangeService(task.workspace, events);
-    const sandbox =
-      task.runOptions.execution === 'host'
-        ? new LogicalSandboxProvider()
-        : new NativeSandboxProvider(root, task.runOptions.allowNetwork);
-    registerFileTools(tools, sandbox, changes);
-    registerMemoryTools(tools, store, root);
-    registerGitTools(tools, changes);
-    registerSkillTools(tools, task.workspace);
-    const mcp = registerMCPTools(tools, task.workspace, events, sandbox);
-    const browser = registerBrowserTools(tools, events, process.env.AGENT_VISION === 'true');
-    const permissions = new PermissionManager(events, async (request, signal) => {
-      if (!process.stdin.isTTY) return 'deny';
-      const reader = createInterface({ input: process.stdin, output: process.stderr });
-      try {
-        const answer = await reader.question(
-          `Approve ${request.tool}: ${JSON.stringify(request.input)}? Execution uses the task's selected sandbox mode. [y/N] `,
-          { signal },
-        );
-        return answer.toLowerCase() === 'y' ? 'once' : 'deny';
-      } finally {
-        reader.close();
-      }
-    });
-    const runner = new AgentRunner(task, {
-      tasks,
-      events,
-      tools,
-      permissions,
-      provider: createModelProvider(config),
-      restored,
-      checkpoints: store,
-      pricing: {
-        maxOutputTokens: config.maxOutputTokens,
-        inputPerMillion: process.env.AGENT_INPUT_PRICE
-          ? Number(process.env.AGENT_INPUT_PRICE)
-          : undefined,
-        outputPerMillion: process.env.AGENT_OUTPUT_PRICE
-          ? Number(process.env.AGENT_OUTPUT_PRICE)
-          : undefined,
-      },
-      requestUser: async (question, signal) => {
-        if (!process.stdin.isTTY)
-          throw new Error('Interactive input requires a terminal. Resume this task in a terminal.');
+      console.error(`Task ${task.id} · resume with: pnpm agent resume ${task.id}`);
+      const events = new EventBus(task);
+      events.subscribe((event) => {
+        store.saveTask(task);
+        console.log(JSON.stringify(event));
+      });
+      const tools = new ToolRegistry();
+      const changes = new FileChangeService(executionRoot, events);
+      const sandbox =
+        task.runOptions.execution === 'host'
+          ? new LogicalSandboxProvider()
+          : new NativeSandboxProvider(executionRoot, task.runOptions.allowNetwork);
+      registerFileTools(tools, sandbox, changes);
+      registerMemoryTools(tools, store, root);
+      registerGitTools(tools, changes);
+      registerSkillTools(tools, task.workspace);
+      const mcp = registerMCPTools(
+        tools,
+        executionRoot,
+        events,
+        sandbox,
+        undefined,
+        task.workspace,
+        () => pluginMCP(task.workspace),
+      );
+      resources.push(() => mcp.close());
+      const browser = registerBrowserTools(tools, events, process.env.AGENT_VISION === 'true');
+      resources.push(() => browser.close());
+      const permissions = new PermissionManager(events, async (request, signal) => {
+        if (!process.stdin.isTTY) return 'deny';
         const reader = createInterface({ input: process.stdin, output: process.stderr });
         try {
-          return await reader.question(
-            question.question + ' ' + (question.choices?.join(' / ') ?? '') + ' > ',
+          const answer = await reader.question(
+            `Approve ${request.tool}: ${JSON.stringify(request.input)}? Execution uses the task's selected sandbox mode. [y/N] `,
             { signal },
           );
+          return answer.toLowerCase() === 'y' ? 'once' : 'deny';
         } finally {
           reader.close();
         }
-      },
-      context: new ContextManager(
-        'You are a software development agent. Inspect before editing. Use tools for all local actions. Prefer focused patches. Test changes. Never claim tests ran unless a tool verified them.' +
-          '\n' +
-          modeInstruction(task.runOptions.mode),
-        (config.contextWindow ?? 64000) - (config.maxOutputTokens ?? 4096),
-      ),
-      memory: new MemoryManager(),
-    });
-    process.once('SIGINT', () => runner.interrupt());
-    process.once('SIGTERM', () => runner.interrupt());
-    await runner.run().finally(async () => {
-      await mcp.close();
-      await browser.close();
-      store.saveTask(task);
-    });
-    if (task.status !== 'completed') process.exitCode = 1;
+      });
+      const provider = createModelProvider(config);
+      const advanced = await prepareCapabilities({
+        task,
+        tasks,
+        events,
+        tools,
+        provider,
+        permissions,
+        changes,
+        sandbox,
+        checkpoints: store,
+        pricing: config,
+        saveTask: (child) => store.saveTask({ ...child, workspace: root }),
+      });
+      resources.push(() => advanced.close());
+      const runner = new AgentRunner(task, {
+        ...advanced,
+        tasks,
+        events,
+        tools,
+        permissions,
+        provider,
+        restored,
+        checkpoints: store,
+        pricing: {
+          maxOutputTokens: config.maxOutputTokens,
+          inputPerMillion: process.env.AGENT_INPUT_PRICE
+            ? Number(process.env.AGENT_INPUT_PRICE)
+            : undefined,
+          outputPerMillion: process.env.AGENT_OUTPUT_PRICE
+            ? Number(process.env.AGENT_OUTPUT_PRICE)
+            : undefined,
+        },
+        requestUser: async (question, signal) => {
+          if (!process.stdin.isTTY)
+            throw new Error(
+              'Interactive input requires a terminal. Resume this task in a terminal.',
+            );
+          const reader = createInterface({ input: process.stdin, output: process.stderr });
+          try {
+            return await reader.question(
+              question.question + ' ' + (question.choices?.join(' / ') ?? '') + ' > ',
+              { signal },
+            );
+          } finally {
+            reader.close();
+          }
+        },
+        context: new ContextManager(
+          'You are a software development agent. Inspect before editing. Use tools for all local actions. Prefer focused patches. Test changes. Never claim tests ran unless a tool verified them.' +
+            '\n' +
+            modeInstruction(task.runOptions.mode),
+          (config.contextWindow ?? 64000) - (config.maxOutputTokens ?? 4096),
+        ),
+        memory: new MemoryManager(),
+      });
+      process.once('SIGINT', () => runner.interrupt());
+      process.once('SIGTERM', () => runner.interrupt());
+      await runner.run();
+      if (task.status !== 'completed') process.exitCode = 1;
+    } catch (error) {
+      task.status = 'failed';
+      throw error;
+    } finally {
+      try {
+        await Promise.allSettled(resources.map((close) => close()));
+        store.saveTask(task);
+      } finally {
+        release();
+      }
+    }
   }
 }

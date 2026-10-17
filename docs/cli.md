@@ -45,12 +45,60 @@ A real run prints its task ID. Press Ctrl+C to interrupt and save its state, the
 
 Use `AGENT_MAX_TOKENS`, `AGENT_MAX_COST_USD`, `AGENT_MAX_MINUTES`, `AGENT_INPUT_PRICE` and `AGENT_OUTPUT_PRICE` to set budgets and prices per million tokens. `AGENT_EXECUTION=restricted` is the default; `AGENT_EXECUTION=host` explicitly permits approved host commands. `AGENT_NETWORK=true` permits network inside the sandbox.
 
-`pnpm eval:agent` runs real model tasks with independent behavioral checks in temporary workspaces. It requires your real model configuration and uses tokens. `EVAL_SAMPLES=1..10` controls attempts per task. Results show success rate, actual checks, duration and reported/estimated usage under `.agent/evals/`. No demo/provider fixture is accepted as a real evaluation.
-
 ## Model presets and development workflow
 
 Set `AGENT_PROVIDER` to a provider ID from [Model configuration](configuration.md), such as `deepseek`, `qwen`, `kimi`, `glm`, `gemini`, `doubao`, `minimax`, `siliconflow`, `groq`, `grok`, `mistral`, `openrouter`, `ollama` or `lmstudio`. A preset supplies its default endpoint; `AGENT_BASE_URL` overrides it for regional or private services. Azure and `compatible` require an explicit endpoint.
 
 `AGENT_WORKFLOW=development` selects investigation, planning, implementation and independent read-only review. `AGENT_CONTEXT_WINDOW` and `AGENT_MAX_OUTPUT_TOKENS` set model limits; `AGENT_STREAMING=false` uses non-streaming replies. `AGENT_REASONING_EFFORT=low|medium|high` requests a supported reasoning level. Resume with the original provider, model and endpoint.
 
-Evaluations cover numeric correctness, stable deduplication, changes across modules, cancellation and untrusted repository content. `pnpm eval:agent --validate` checks that the fixed graders reject broken fixtures and accept reference solutions without contacting a model; it does not measure agent quality. Real evaluations record success, latency percentiles, tool failures, verification and token/cost usage. Compare standard and development workflows using the same model and sample count.
+## Run evaluations
+
+Both evaluation commands load the repository-root `.env`; exported variables take precedence. They do not inherit saved desktop model profiles. Run `cp .env.example .env`, then enter your provider, model ID and key. Leave `AGENT_BASE_URL` blank for a provider preset; compatible and Azure providers require an explicit URL. Local key requirements depend on the service.
+
+Help and case listing need no credentials and make no model requests:
+
+```sh
+pnpm eval:agent --help
+pnpm eval:agent --list
+pnpm eval:capabilities --help
+pnpm eval:capabilities --list
+```
+
+Start with a selected case before running the full suites:
+
+```sh
+EVAL_CASES=cart-rounding EVAL_SAMPLES=1 pnpm eval:agent
+CAPABILITY_CASES=plan-is-read-only pnpm eval:capabilities
+# All cases: pnpm eval:agent / pnpm eval:capabilities
+```
+
+Real runs use model tokens and automatically approve evaluation tools in temporary workspaces. Browser probes need an installed Chromium. The four capability cases cover read-only plans, stream cancellation, recovery without duplicate side effects, and browser observation/interaction. `cancel-live-model-stream` requires streaming; exclude it with `CAPABILITY_CASES` for a service without streaming support.
+
+Both commands honor `AGENT_MAX_TOKENS`, `AGENT_CONTEXT_WINDOW`, `AGENT_MAX_OUTPUT_TOKENS`, `AGENT_STREAMING` and configured token prices. Missing or invalid settings produce an actionable error rather than an empty successful report. Exit codes are 2 for configuration errors, 1 for failed evaluations and 0 for success. Each case prints progress; full reports live under `.agent/evals/`.
+
+Without a model, `pnpm eval:agent --validate` checks six fixed graders. It establishes only that broken fixtures fail and reference solutions pass, not agent quality. Capability probes have no offline validation mode. Passing a case does not replace verification in a real project.
+
+Agent cases cover currency arithmetic, stable deduplication, cross-file changes, cancellation, untrusted repository content and test-driven repair. The repair case must reproduce a failing test before editing and preserve its tests. Reports include success rate, latency percentiles, tool failures, verification, usage and private task events. `EVAL_SAMPLES=1..10` controls attempts per case; keep failed runs and use the same model and samples when comparing workflows. The default is 100,000 tokens per task.
+
+Install browser dependencies with `pnpm exec playwright install chromium` before the browser case.
+
+## Automation and integrations
+
+Run `pnpm agent platform-help` for schedules, plugins, history, remote control, workers and CI. See the [platform guide](platform.md) for configuration, approvals and deployment.
+
+## Evaluating pinned local repositories
+
+Create a local suite from `examples/evals/repository-suite.json`. Each case specifies a local repository, a full commit SHA, a prompt, a fixed grading command, allowed edit paths and tests or configuration that must remain unchanged. Replace both the placeholder path and the all-zero commit.
+
+```sh
+EVAL_REPOSITORY_SUITE=/absolute/path/to/suite.json pnpm eval:repository --validate
+EVAL_REPOSITORY_SUITE=/absolute/path/to/suite.json EVAL_SAMPLES=3 pnpm eval:repository
+```
+
+Relative repository paths resolve from the suite file. Each sample clones the pinned commit into a temporary directory, excluding uncommitted source changes and leaving the source checkout untouched. `setup` accepts up to five preparation commands. Setup is offline by default; explicitly set `setupNetwork: true` for a case that downloads dependencies. Review these commands and the grader yourself. Agent execution and final grading remain offline.
+
+`--validate` checks checkout, preparation and a failing baseline without a model; it does not validate repair quality. Actual runs use `AGENT_*`, `EVAL_CASES` and `EVAL_SAMPLES`, with at most 50 steps, three minutes and the configured token budget per task. Success requires a completed task, nonempty Git-visible edits confined to allowed paths, unchanged preserved files and a passing independent grader. Modifying tests cannot turn a passing command into an accepted result.
+
+Reports, redacted task records and patches appear under `.agent/evals/*-repository/`. Reports include commit IDs, baseline and final exit codes, usage, duration and file-boundary checks. Missing model configuration fails explicitly. Controlled-model integration tests do not establish real-model success rates.
+
+Path checks cover tracked files and non-ignored new files, excluding private `.agent` data. They do not integrity-scan dependencies or other ignored files. Explicitly include acceptance tests and configuration in `preservePaths`, and review the resulting patch.

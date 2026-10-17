@@ -76,7 +76,10 @@ export class DemoProvider implements ModelProvider {
       input,
     });
     const planOnly = !can('demo_apply_fix');
-    const fix = /fix|修复|测试|bug|issue|implement the plan/i.test(prompt);
+    const fix =
+      /fix|修复|修正|测试|bug|issue|implement the plan|按(?:照)?上一轮.*计划|前のターンの計画/i.test(
+        prompt,
+      );
     const architecture = /architecture|codebase|架构|分析|计划|plan|repository/i.test(prompt);
     if ((fix || architecture) && observations.length === 0) {
       return {

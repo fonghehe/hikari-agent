@@ -41,3 +41,7 @@ Open **Appearance & language** to restore your preferred theme or language. If t
 ## Attachments will not send
 
 Preview the attachment and check its size and format. For scanned PDFs, attach page screenshots. For images, enable **This model accepts images** and use a vision-capable model. Sending errors preserve your draft; processing errors leave valid attachments in place. [See the attachment limits](attachments.md).
+
+## Data and saved memory
+
+See [Data, memory and retrieval](memory-and-storage.md) for the SQLite location, DataGrip inspection, backup rules and the limits of keyword and semantic retrieval.

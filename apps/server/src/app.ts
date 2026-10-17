@@ -7,6 +7,8 @@ import { promisify } from 'node:util';
 import { z } from 'zod';
 import { runOptionsSchema, taskPlanSchema, runSummarySchema, redact } from '@hikari/agent-core';
 import { ConflictError, type Repository } from '@hikari/database';
+import { registerExecution, type ExecutionConfig } from './execution';
+import { executionConsole, executionCSP } from './console';
 const derive = promisify(scrypt);
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const credentials = z.object({
@@ -73,8 +75,40 @@ interface Session {
   userId: string;
   expires: number;
 }
-export async function createServer(repository: Repository, redisUrl?: string) {
-  const app = Fastify({ bodyLimit: 4 * 1024 * 1024, logger: false });
+export async function createServer(
+  repository: Repository,
+  redisUrl?: string,
+  execution: ExecutionConfig = {},
+  operations: { logging?: boolean; token?: string } = {},
+) {
+  if (operations.token && operations.token.length < 32)
+    throw new Error('Operations token must contain at least 32 characters');
+  const app = Fastify({
+    bodyLimit: 4 * 1024 * 1024,
+    logger: operations.logging
+      ? {
+          level: 'info',
+          serializers: {
+            req: (req) => ({ method: req.method, path: String(req.url).split('?')[0] }),
+            res: (res) => ({ statusCode: res.statusCode }),
+          },
+        }
+      : false,
+  });
+  const counts: Record<string, number> = {};
+  let totalMs = 0;
+  app.addHook('onResponse', async (_request, reply) => {
+    const code = String(reply.statusCode);
+    counts[code] = (counts[code] ?? 0) + 1;
+    totalMs += reply.elapsedTime;
+  });
+  app.addHook('onError', async (request, _reply, error) => {
+    request.log.error({
+      event: 'request.failed',
+      requestId: request.id,
+      code: String((error as { code?: string }).code ?? 'ERROR').slice(0, 80),
+    });
+  });
   const redis = redisUrl ? new Redis(redisUrl, { maxRetriesPerRequest: 1 }) : undefined;
   await app.register(rateLimit, { max: 60, timeWindow: '1 minute', ...(redis ? { redis } : {}) });
   await app.register(websocket);
@@ -122,6 +156,38 @@ export async function createServer(repository: Repository, redisUrl?: string) {
     else deliver(owner, data);
   };
   app.get('/health', async () => ({ status: 'ok', mode: redis ? 'redis' : 'single-process' }));
+  app.get('/ready', async (_request, reply) => {
+    try {
+      await repository.get('workspaces', 'system', 'health');
+      if (redis) await redis.ping();
+      return { status: 'ready' };
+    } catch {
+      return reply.code(503).send({ status: 'unavailable' });
+    }
+  });
+  app.get('/operations/status', async (request, reply) => {
+    if (!operations.token) return reply.code(404).send({ error: 'Not enabled' });
+    const provided =
+      typeof request.headers.authorization === 'string'
+        ? request.headers.authorization.replace(/^Bearer /, '')
+        : '';
+    if (!timingSafeEqual(Buffer.from(digest(provided)), Buffer.from(digest(operations.token))))
+      return reply.code(401).send({ error: 'Unauthorized' });
+    return {
+      uptimeSeconds: Math.round(process.uptime()),
+      memory: process.memoryUsage(),
+      responses: { ...counts },
+      totalResponseMs: Math.round(totalMs),
+    };
+  });
+  app.get('/execution', async (_request, reply) =>
+    reply
+      .header('Content-Security-Policy', executionCSP)
+      .header('Cache-Control', 'no-store')
+      .type('text/html; charset=utf-8')
+      .send(executionConsole),
+  );
+  await registerExecution(app, repository, authenticate, execution);
   app.post(
     '/auth/register',
     { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },

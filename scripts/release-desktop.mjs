@@ -6,6 +6,7 @@ const repository = process.env.GITHUB_REPOSITORY;
 if (!repository || !/^[-\w.]+\/[-\w.]+$/.test(repository))
   throw new Error('Release builds require the actual GITHUB_REPOSITORY');
 const [owner, repo] = repository.split('/');
+if (!process.env.GH_TOKEN) throw new Error('Release builds require a GitHub publication token');
 const version = process.env.GITHUB_REF_NAME?.replace(/^v/, '');
 if (!version || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version))
   throw new Error('Use a semantic version tag such as v0.1.0');
@@ -19,12 +20,18 @@ if (
 if (
   process.platform === 'darwin' &&
   (!process.env.CSC_NAME ||
+    process.env.CSC_NAME.trim() === '-' ||
     !process.env.APPLE_ID ||
     !process.env.APPLE_APP_SPECIFIC_PASSWORD ||
     !process.env.APPLE_TEAM_ID)
 )
   throw new Error('macOS releases require Developer ID identity and notarization credentials');
 const root = fileURLToPath(new URL('..', import.meta.url));
+if (process.argv.includes('--check')) {
+  console.log('Release environment validated. No build or upload performed.');
+  process.exit(0);
+}
+if (process.argv.length > 2) throw new Error('Supported option: --check');
 const run = (command, args, cwd = root) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {

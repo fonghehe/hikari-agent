@@ -2,7 +2,7 @@
 
 ## サービスへ接続
 
-サイドバー下部の **モデル設定** でプロバイダーを選び、アカウントで利用できるモデル ID と必要な API キーを入力して接続します。会話や添付の分析にはワークスペースは不要です。開発タスクではワークスペースを開いてください。
+サイドバー下部の **設定 → モデル設定** でプロバイダーを選び、アカウントで利用できるモデル ID と必要な API キーを入力して接続します。会話や添付の分析にはワークスペースは不要です。開発タスクではワークスペースを開いてください。
 
 OpenAI、Azure OpenAI / Foundry、Anthropic、Google Gemini、DeepSeek、Qwen、Kimi、GLM、Doubao、MiniMax、SiliconFlow、Groq、Grok、Mistral、OpenRouter、Ollama、LM Studio のプリセットを用意しています。他の Chat Completions サービスには **OpenAI compatible** を選びます。アカウントの地域やゲートウェイに合わせて接続先を変更できます。
 

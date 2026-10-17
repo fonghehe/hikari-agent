@@ -1,8 +1,77 @@
 import { useState } from 'react';
 import type { RunOptions, Task } from '@hikari/agent-core';
+import { Dialog } from './dialog';
 import { Button } from '@hikari/ui';
 import { api, perform } from './store';
 import { useI18n } from './i18n';
+
+export function TaskOptions({
+  close,
+  mode,
+  setMode,
+  maxSteps,
+  setMaxSteps,
+  isolated,
+  setIsolated,
+  canIsolate,
+  followUp,
+  value,
+  onChange,
+}: {
+  close(): void;
+  mode: 'plan' | 'execute';
+  setMode(value: 'plan' | 'execute'): void;
+  maxSteps: number;
+  setMaxSteps(value: number): void;
+  isolated: boolean;
+  setIsolated(value: boolean): void;
+  canIsolate: boolean;
+  followUp: boolean;
+  value: Partial<RunOptions>;
+  onChange(value: Partial<RunOptions>): void;
+}) {
+  const { t } = useI18n();
+  return (
+    <Dialog title={t('Task options')} close={close} className="task-options-modal">
+      <label>
+        {t('Mode')}
+        <select
+          aria-label={t('Agent mode')}
+          value={mode}
+          onChange={(event) => setMode(event.target.value as 'plan' | 'execute')}
+        >
+          <option value="execute">{t('Execute')}</option>
+          <option value="plan">{t('Plan · read only')}</option>
+        </select>
+      </label>
+      <label>
+        {t('Max turns')}
+        <input
+          aria-label={t('Maximum model turns')}
+          type="number"
+          min={1}
+          max={100}
+          value={maxSteps}
+          onChange={(event) =>
+            setMaxSteps(Math.max(1, Math.min(100, Number(event.target.value) || 1)))
+          }
+        />
+      </label>
+      {!followUp && (
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            disabled={!canIsolate}
+            checked={isolated}
+            onChange={(event) => setIsolated(event.target.checked)}
+          />
+          {t('Isolate in a Git worktree')}
+        </label>
+      )}
+      <RunSettings value={value} onChange={onChange} />
+    </Dialog>
+  );
+}
 
 export function RunSettings({
   value,
@@ -18,8 +87,41 @@ export function RunSettings({
       <summary>{t('Acceptance and budgets')}</summary>
       <div className="settings-grid">
         <label>
+          {t('Persistent goal (optional)')}
+          <textarea
+            aria-label={t('Persistent goal (optional)')}
+            maxLength={4000}
+            value={value.goal?.objective ?? ''}
+            onChange={(event) =>
+              update({
+                goal: event.target.value
+                  ? {
+                      objective: event.target.value,
+                      maxContinuations: value.goal?.maxContinuations ?? 5,
+                    }
+                  : undefined,
+              })
+            }
+          />
+        </label>
+        {value.goal && (
+          <label>
+            {t('Maximum goal continuations')}
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={value.goal.maxContinuations}
+              onChange={(event) =>
+                update({ goal: { ...value.goal!, maxContinuations: Number(event.target.value) } })
+              }
+            />
+          </label>
+        )}
+        <label>
           {t('Workflow')}
           <select
+            aria-label={t('Workflow')}
             value={value.workflow ?? 'standard'}
             onChange={(e) => update({ workflow: e.target.value as RunOptions['workflow'] })}
           >
@@ -30,6 +132,7 @@ export function RunSettings({
         <label>
           {t('Worktree starting point')}
           <select
+            aria-label={t('Worktree starting point')}
             value={value.worktreeSource ?? 'head'}
             onChange={(e) =>
               update({ worktreeSource: e.target.value as RunOptions['worktreeSource'] })
@@ -82,6 +185,7 @@ export function RunSettings({
         <label>
           {t('Test requirement')}
           <select
+            aria-label={t('Test requirement')}
             value={value.requireTests === undefined ? 'auto' : String(value.requireTests)}
             onChange={(e) =>
               update({
@@ -97,6 +201,7 @@ export function RunSettings({
         <label>
           {t('Command execution')}
           <select
+            aria-label={t('Command execution')}
             value={value.execution ?? 'restricted'}
             onChange={(e) => update({ execution: e.target.value as 'restricted' | 'host' })}
           >
@@ -118,45 +223,54 @@ export function RunSettings({
           <legend>
             {t('Acceptance check')} {index + 1}
           </legend>
-          <input
-            aria-label={t('Check description')}
-            value={check.label}
-            onChange={(e) =>
-              update({
-                checks: value.checks?.map((item) =>
-                  item.id === check.id ? { ...item, label: e.target.value } : item,
-                ),
-              })
-            }
-          />
+          <label>
+            {t('Check description')}
+            <input
+              aria-label={t('Check description')}
+              value={check.label}
+              onChange={(e) =>
+                update({
+                  checks: value.checks?.map((item) =>
+                    item.id === check.id ? { ...item, label: e.target.value } : item,
+                  ),
+                })
+              }
+            />
+          </label>
           {check.kind === 'file' ? (
             <>
-              <input
-                aria-label={t('File path')}
-                placeholder={t('File path')}
-                value={check.path}
-                onChange={(e) =>
-                  update({
-                    checks: value.checks?.map((item) =>
-                      item.id === check.id ? { ...check, path: e.target.value } : item,
-                    ),
-                  })
-                }
-              />
-              <input
-                aria-label={t('Required text')}
-                placeholder={t('Required text')}
-                value={check.contains ?? ''}
-                onChange={(e) =>
-                  update({
-                    checks: value.checks?.map((item) =>
-                      item.id === check.id
-                        ? { ...check, contains: e.target.value || undefined }
-                        : item,
-                    ),
-                  })
-                }
-              />
+              <label className="field-wide">
+                {t('File path')}
+                <input
+                  aria-label={t('File path')}
+                  placeholder={t('File path')}
+                  value={check.path}
+                  onChange={(e) =>
+                    update({
+                      checks: value.checks?.map((item) =>
+                        item.id === check.id ? { ...check, path: e.target.value } : item,
+                      ),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                {t('Required text')}
+                <input
+                  aria-label={t('Required text')}
+                  placeholder={t('Required text')}
+                  value={check.contains ?? ''}
+                  onChange={(e) =>
+                    update({
+                      checks: value.checks?.map((item) =>
+                        item.id === check.id
+                          ? { ...check, contains: e.target.value || undefined }
+                          : item,
+                      ),
+                    })
+                  }
+                />
+              </label>
               <label>
                 <input
                   type="checkbox"
@@ -174,43 +288,52 @@ export function RunSettings({
             </>
           ) : (
             <>
-              <input
-                aria-label={t('Executable')}
-                placeholder="pnpm"
-                value={check.command}
-                onChange={(e) =>
-                  update({
-                    checks: value.checks?.map((item) =>
-                      item.id === check.id ? { ...check, command: e.target.value } : item,
-                    ),
-                  })
-                }
-              />
-              <textarea
-                aria-label={t('Arguments (one per line)')}
-                placeholder={t('Arguments (one per line)')}
-                value={check.args.join('\n')}
-                onChange={(e) =>
-                  update({
-                    checks: value.checks?.map((item) =>
-                      item.id === check.id
-                        ? { ...check, args: e.target.value.split('\n').filter(Boolean) }
-                        : item,
-                    ),
-                  })
-                }
-              />
-              <input
-                aria-label={t('Working directory')}
-                value={check.cwd}
-                onChange={(e) =>
-                  update({
-                    checks: value.checks?.map((item) =>
-                      item.id === check.id ? { ...check, cwd: e.target.value } : item,
-                    ),
-                  })
-                }
-              />
+              <label className="field-wide">
+                {t('Executable')}
+                <input
+                  aria-label={t('Executable')}
+                  placeholder="pnpm"
+                  value={check.command}
+                  onChange={(e) =>
+                    update({
+                      checks: value.checks?.map((item) =>
+                        item.id === check.id ? { ...check, command: e.target.value } : item,
+                      ),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                {t('Arguments (one per line)')}
+                <textarea
+                  aria-label={t('Arguments (one per line)')}
+                  placeholder={t('Arguments (one per line)')}
+                  value={check.args.join('\n')}
+                  onChange={(e) =>
+                    update({
+                      checks: value.checks?.map((item) =>
+                        item.id === check.id
+                          ? { ...check, args: e.target.value.split('\n').filter(Boolean) }
+                          : item,
+                      ),
+                    })
+                  }
+                />
+              </label>
+              <label className="field-wide">
+                {t('Working directory')}
+                <input
+                  aria-label={t('Working directory')}
+                  value={check.cwd}
+                  onChange={(e) =>
+                    update({
+                      checks: value.checks?.map((item) =>
+                        item.id === check.id ? { ...check, cwd: e.target.value } : item,
+                      ),
+                    })
+                  }
+                />
+              </label>
             </>
           )}
           <Button

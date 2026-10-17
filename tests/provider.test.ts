@@ -1,4 +1,5 @@
 import { it, expect, vi, afterEach } from 'vitest';
+import type { ModelRequest, ModelResponse } from '../packages/agent-core/src';
 import {
   OpenAICompatibleProvider,
   OpenAIProvider,
@@ -6,6 +7,74 @@ import {
 } from '../packages/model-provider/src';
 import { providerFetch } from '../packages/model-provider/src/http';
 afterEach(() => vi.unstubAllGlobals());
+it('reports bounded provider errors with request IDs while removing actual credentials', async () => {
+  const credential = 'arbitrary-private-credential';
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'invalid_request',
+              message: `Missing tool field; credential=${credential}; sk-testsecret123456`,
+            },
+          }),
+          { status: 400, headers: { 'x-request-id': 'request-123' } },
+        ),
+    ),
+  );
+  const error = await providerFetch('https://fixture.example', {
+    headers: { Authorization: `Bearer ${credential}` },
+  }).catch((error) => error);
+  expect(error.code).toBe('MODEL_REQUEST');
+  expect(error.message).toContain('invalid_request');
+  expect(error.message).toContain('Missing tool field');
+  expect(error.message).toContain('request-123');
+  expect(error.message).not.toContain(credential);
+  expect(error.message).not.toContain('sk-testsecret');
+});
+
+it('cancels oversized error responses and preserves HTTP failures if the body is unreadable', async () => {
+  const cancel = vi.fn();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('gateway failure '.repeat(10000)));
+            },
+            cancel,
+          }),
+          { status: 400 },
+        ),
+    ),
+  );
+  await expect(providerFetch('https://fixture.example', {})).rejects.toMatchObject({
+    code: 'MODEL_REQUEST',
+  });
+  expect(cancel).toHaveBeenCalledOnce();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new Error('broken body'));
+            },
+          }),
+          { status: 403 },
+        ),
+    ),
+  );
+  await expect(providerFetch('https://fixture.example', {})).rejects.toMatchObject({
+    code: 'MODEL_AUTH',
+    message: 'Model endpoint returned HTTP 403',
+  });
+});
 it('retains final usage-only streaming chunks and bounds OpenAI output correctly', async () => {
   let body: Record<string, unknown> = {};
   vi.stubGlobal(
@@ -424,4 +493,87 @@ it('rejects non-streaming length-limited replies instead of treating partial ans
   );
   const provider = new OpenAICompatibleProvider({ model: 'fixture', apiKey: 'fixture' });
   await expect(provider.chat(request)).rejects.toMatchObject({ code: 'MODEL_LENGTH' });
+});
+
+it('provides DeepSeek reasoning fields for empty, compacted and recovered assistant messages', async () => {
+  const { createModelProvider } = await import('../packages/model-provider/src');
+  const bodies: { messages: Record<string, unknown>[] }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url, options: RequestInit) => {
+      bodies.push(JSON.parse(String(options.body)));
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'done' }, finish_reason: 'stop' }] }),
+        { headers: { 'content-type': 'application/json' } },
+      );
+    }),
+  );
+  const provider = createModelProvider({
+    provider: 'deepseek',
+    model: 'fixture',
+    apiKey: 'fixture',
+  });
+  const continuation: ModelRequest = {
+    ...request,
+    messages: [
+      ...request.messages,
+      { role: 'assistant', content: '[Earlier tool exchange summarized: passed]' },
+      { role: 'assistant', content: '', toolCalls: [{ id: 'read', name: 'read_file', input: {} }] },
+      { role: 'tool', toolCallId: 'read', content: 'read outcome' },
+      {
+        role: 'assistant',
+        content: 'continue',
+        providerData: { reasoningContent: 'preserved real reasoning' },
+      },
+    ],
+  };
+  await provider.chat(continuation);
+  for await (const response of provider.stream(continuation)) expect(response.text).toBe('done');
+  expect(bodies).toHaveLength(2);
+  for (const body of bodies) {
+    const assistants = body.messages.filter((message) => message.role === 'assistant');
+    expect(assistants.map((message) => message.reasoning_content)).toEqual([
+      '',
+      '',
+      'preserved real reasoning',
+    ]);
+  }
+  bodies.length = 0;
+  await new OpenAICompatibleProvider({ model: 'fixture', apiKey: 'fixture' }).chat({
+    ...request,
+    messages: [{ role: 'assistant', content: 'normal' }],
+  });
+  expect(bodies[0]?.messages[0]).not.toHaveProperty('reasoning_content');
+});
+
+it('classifies malformed tool JSON as a recoverable model response without returning partial tool calls', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      stream([
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 0, id: 'bad', function: { name: 'write_file', arguments: '{"path":' } },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        },
+        { choices: [], usage: { prompt_tokens: 20, completion_tokens: 10 } },
+      ]),
+    ),
+  );
+  const provider = new OpenAICompatibleProvider({ model: 'fixture', apiKey: 'fixture' });
+  const partial: ModelResponse[] = [];
+  await expect(
+    (async () => {
+      for await (const response of provider.stream(request)) partial.push(response);
+    })(),
+  ).rejects.toMatchObject({ code: 'INVALID_TOOL_CALL' });
+  expect(partial.at(-1)?.usage).toEqual({ inputTokens: 20, outputTokens: 10 });
+  expect(partial.every((response) => response.toolCalls.length === 0)).toBe(true);
 });

@@ -14,7 +14,7 @@ import {
   type AttachmentContent,
   type AttachmentUpload,
 } from '@hikari/shared';
-import { type Message } from '@hikari/agent-core';
+import { sensitivePath, redactText, type Message } from '@hikari/agent-core';
 import type { LocalPersistence } from './persistence';
 
 const textExtensions = new Set(
@@ -112,6 +112,7 @@ function checkDocxArchive(bytes: Buffer) {
 
 const fullTextLimit = 512000;
 function chunksFor(text: string, label = 'Paragraph'): NonNullable<AttachmentContent['chunks']> {
+  text = redactText(text);
   const result = [];
   const paragraphs = text.split(/\n\s*\n/);
   let buffer = '';
@@ -172,6 +173,8 @@ async function recognize(bytes: Buffer): Promise<string> {
 }
 export async function prepareAttachment(input: AttachmentUpload): Promise<AttachmentContent> {
   const value = uploadSchema.parse(input);
+  if (sensitivePath(value.name))
+    throw new Error('Sensitive credential files cannot be attached. Use a redacted text excerpt.');
   const bytes = Buffer.from(value.bytes);
   const extension = path.extname(value.name).slice(1).toLowerCase();
   const base = { id: randomUUID(), name: value.name, size: bytes.length };
@@ -284,7 +287,11 @@ export async function prepareAttachment(input: AttachmentUpload): Promise<Attach
   if (!text.trim()) throw new Error('The file contains no readable text');
   if (text.length > fullTextLimit)
     throw new Error('Text exceeds 512,000 characters. Split the document.');
-  chunks ??= chunksFor(text);
+  const original = text;
+  text = redactText(text);
+  // Rebuild after whole-document redaction when a private key spans PDF pages/chunks.
+  if (text !== original) chunks = chunksFor(text);
+  else chunks ??= chunksFor(text);
   truncated ||= text.length > attachmentLimits.maxTextChars;
   return {
     attachment: {
@@ -407,7 +414,18 @@ export class AttachmentStore {
             | AttachmentContent
             | undefined);
     if (!value) throw new Error('Attachment expired or is unavailable. Please attach it again.');
-    return structuredClone(value);
+    const safe = structuredClone(value);
+    if (safe.attachment.kind === 'text') {
+      // Old persisted chunks may have split a secret before this policy existed.
+      const full = (safe.chunks ?? []).map((chunk) => chunk.text).join('');
+      const clean = redactText(full);
+      if (clean !== full) {
+        safe.chunks = chunksFor(clean);
+        safe.text = clean.slice(0, attachmentLimits.maxTextChars);
+      }
+      if (safe.text) safe.text = redactText(safe.text);
+    }
+    return safe;
   }
   resolve(ids: string[]): AttachmentContent[] {
     if (new Set(ids).size !== ids.length || ids.length > attachmentLimits.maxFiles)

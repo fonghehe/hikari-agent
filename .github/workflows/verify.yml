@@ -43,6 +43,12 @@ jobs:
       - run: xvfb-run -a pnpm exec playwright test
         if: runner.os == 'Linux'
       - run: pnpm desktop:pack
+      - name: Verify packaged desktop
+        if: runner.os != 'Linux'
+        run: pnpm test:package
+      - name: Verify packaged desktop under Xvfb
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm test:package
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

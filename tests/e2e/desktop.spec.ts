@@ -3,7 +3,7 @@ import { tmpdir as temporaryRoot } from 'node:os';
 import path from 'node:path';
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
 import { createRequire } from 'node:module';
-import { wideDesktopWindow } from './desktop-window';
+import { wideDesktopWindow, openWorkspaceTool, addWorkspaceProject } from './desktop-window';
 let dataDirectory: string;
 const liveApps = new Set<ElectronApplication>();
 const launch = async (options: Parameters<typeof electron.launch>[0]) => {
@@ -34,7 +34,9 @@ test('desktop starts with secure preload and empty workspace', async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.getByRole('heading', { name: /A little direction/ })).toBeVisible();
+    await expect(
+      window.getByRole('heading', { name: 'What would you like to work on?', exact: true }),
+    ).toBeVisible();
     expect(await window.evaluate(() => typeof globalThis.window.hikari?.workspace.open)).toBe(
       'function',
     );
@@ -136,13 +138,15 @@ test('real IPC runs tools and preserves follow-up context in the same worktree',
       })) as typeof dialog.showOpenDialog;
     }, root);
     const page = await wideDesktopWindow(app);
-    await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
+    await addWorkspaceProject(page);
     await expect(page.getByRole('treeitem', { name: 'sample.txt' })).toBeVisible();
     await page.getByRole('button', { name: 'Configure model', exact: true }).click();
     await page.getByLabel('Model', { exact: true }).fill('fixture-model');
     await page.getByLabel('Base URL').fill(`http://127.0.0.1:${address.port}/v1`);
-    await page.locator('form').getByRole('button', { name: 'Connect model', exact: true }).click();
+    await page.getByRole('button', { name: 'Connect model', exact: true }).click();
+    await page.getByRole('button', { name: 'Task options', exact: true }).click();
     await page.getByLabel('Isolate in a Git worktree').check();
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByRole('textbox', { name: 'Task prompt' }).fill('Read sample.txt');
     await page.getByRole('button', { name: 'Start task' }).click();
     await expect(
@@ -256,9 +260,8 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
       }) as typeof dialog.showOpenDialog;
     }, root);
     let page = await wideDesktopWindow(app);
-    await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
-    // click() only dispatches the picker; starting via IPC before it resolves creates
-    // a chat task without file or shell tools and never reaches the approval prompt.
+    await addWorkspaceProject(page);
+    // Project creation must finish before starting through IPC so file and shell tools are available.
     await expect(page.getByRole('treeitem', { name: 'sample.txt', exact: true })).toBeVisible();
     const started = await page.evaluate(
       async ({ url, execution }) => {
@@ -293,7 +296,9 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
     expect(
       await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight),
     ).toBe(true);
-    await expect(page.locator('footer')).toBeInViewport();
+    await expect(
+      page.getByRole('button', { name: 'Send follow-up', exact: true }),
+    ).toBeInViewport();
     await expect(page.getByRole('region', { name: 'Execution evidence' })).toContainText(
       'Recorded checks passed',
     );
@@ -304,7 +309,7 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
     expect(
       task.events.some((event) => event.type === 'tool.failed' && event.data.tool === 'run_tests'),
     ).toBe(true);
-    await page.getByRole('button', { name: 'diff', exact: true }).click();
+    await openWorkspaceTool(page, 'diff');
     await page.getByRole('button', { name: 'sample.txt', exact: true }).click();
     await expect(page.locator('.monaco-diff-editor')).toBeVisible();
     await page.screenshot({ path: 'test-results/repair-diff.png' });
@@ -426,14 +431,16 @@ test('Plan mode prevents writes, persists a plan and carries it into an explicit
       })) as typeof dialog.showOpenDialog;
     }, root);
     const page = await app.firstWindow();
-    await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
+    await addWorkspaceProject(page);
     await page.getByRole('button', { name: 'Configure model', exact: true }).click();
     await page.getByLabel('Model', { exact: true }).fill('plan-fixture');
     await page.getByLabel('Base URL').fill(`http://127.0.0.1:${address.port}/v1`);
-    await page.locator('form').getByRole('button', { name: 'Connect model', exact: true }).click();
+    await page.getByRole('button', { name: 'Connect model', exact: true }).click();
+    await page.getByRole('button', { name: 'Task options', exact: true }).click();
     await page.getByLabel('Agent mode').selectOption('plan');
     await page.getByLabel('Maximum model turns').fill('8');
     await expect(page.getByLabel('Isolate in a Git worktree')).toBeDisabled();
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByRole('textbox', { name: 'Task prompt' }).fill('Inspect and plan');
     await page.getByRole('button', { name: 'Start task', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Task plan' })).toContainText(
@@ -449,7 +456,9 @@ test('Plan mode prevents writes, persists a plan and carries it into an explicit
     expect(await readFile(path.join(root, 'sample.txt'), 'utf8')).toBe('unchanged');
     await page.screenshot({ path: 'test-results/plan-mode.png' });
     await page.getByRole('button', { name: 'Use plan in Execute', exact: true }).click();
+    await page.getByRole('button', { name: 'Task options', exact: true }).click();
     await expect(page.getByLabel('Agent mode')).toHaveValue('execute');
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByRole('button', { name: 'Send follow-up', exact: true }).click();
     await expect(page.locator('[data-event-type="agent.completed"]')).toContainText(
       'Plan carried into Execute',

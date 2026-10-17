@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { test, expect, _electron as electron } from '@playwright/test';
-import { wideDesktopWindow } from './desktop-window';
+import { wideDesktopWindow, openWorkspaceTool, addWorkspaceProject } from './desktop-window';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 let directory: string;
@@ -37,6 +37,9 @@ test('offline Q&A, pause/resume, follow-up, retry, cancel, history and narrow pa
     await expect(window.locator('.local-pill')).toContainText('paused');
     await window.getByRole('button', { name: 'Resume task', exact: true }).click();
     await expect(window.locator('[data-event-type="agent.completed"]')).toContainText('你好！');
+    await expect(window.locator('.agent-activity')).not.toHaveAttribute('open');
+    await expect(window.locator('.run-details')).not.toHaveAttribute('open');
+    await expect(window.locator('[data-event-type="agent.completed"]')).toBeVisible();
     await expect(window.getByRole('button', { name: 'Pause task', exact: true })).toBeDisabled();
     await expect(window.getByRole('button', { name: 'Cancel task', exact: true })).toBeDisabled();
     expect(await window.evaluate(() => globalThis.window.hikari!.agent.configured())).toBe(false);
@@ -55,7 +58,7 @@ test('offline Q&A, pause/resume, follow-up, retry, cancel, history and narrow pa
     await expect(active).not.toHaveAttribute('data-task-id', followup!);
     await window.getByRole('button', { name: 'Cancel task', exact: true }).click();
     await expect(window.locator('.local-pill')).toContainText('cancelled');
-    await window.getByRole('button', { name: /^Tasks/ }).click();
+    await window.getByRole('button', { name: 'Task history', exact: true }).click();
     await expect(window.getByRole('region', { name: 'Task history' })).toBeVisible();
     await expect(window.locator('.history-row')).toHaveCount(3);
     await window.getByRole('textbox', { name: 'Search tasks' }).fill('no matching task');
@@ -66,8 +69,10 @@ test('offline Q&A, pause/resume, follow-up, retry, cancel, history and narrow pa
     await app.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0]!.setSize(1000, 700);
     });
-    await window.getByRole('button', { name: 'Repository', exact: true }).click();
+    await window.getByRole('button', { name: 'Toggle right panel', exact: true }).click();
+    await openWorkspaceTool(window, 'files');
     await expect(window.getByRole('complementary', { name: 'Right panel' })).toBeVisible();
+    await window.getByRole('treeitem', { name: 'src', exact: true }).click();
     await window.getByRole('treeitem', { name: 'src/cart.ts', exact: true }).click();
     await expect(window.locator('.monaco-editor')).toBeVisible();
     await window.screenshot({ path: 'test-results/demo-narrow.png' });
@@ -96,7 +101,7 @@ test('demo Plan, Execute, simulated Diff review and restored sample state', asyn
     const window = await wideDesktopWindow(app);
     await window.getByRole('button', { name: /Understand a codebase/ }).click();
     await expect(window.getByRole('textbox', { name: 'Task prompt', exact: true })).toHaveValue(
-      '分析示例项目的架构，并给出计划。',
+      'Analyze the sample project architecture and propose a plan.',
     );
     await window.getByRole('button', { name: 'Start task', exact: true }).click();
     await expect(window.locator('[data-event-type="agent.completed"]')).toContainText('示例项目');
@@ -156,7 +161,7 @@ test('demo Plan, Execute, simulated Diff review and restored sample state', asyn
         child,
       ),
     ).toContain('price + quantity');
-    await restored.getByRole('button', { name: 'diff', exact: true }).click();
+    await openWorkspaceTool(restored, 'diff');
     await expect(restored.getByText('Undone', { exact: true })).toBeVisible();
     await expect(restored.locator('.global-error')).toHaveCount(0);
   } finally {
@@ -175,8 +180,7 @@ test('settings can explicitly return to offline demo and a cancelled workspace p
     });
     const page = await app.firstWindow();
     await page.getByRole('textbox', { name: 'Task prompt', exact: true }).fill('保留这个草稿');
-    await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
-    await expect(page.getByText('Workspace selection cancelled.', { exact: true })).toBeVisible();
+    await addWorkspaceProject(page, true);
     await expect(page.getByRole('textbox', { name: 'Task prompt', exact: true })).toHaveValue(
       '保留这个草稿',
     );
@@ -239,8 +243,8 @@ test('terminal answers buffered startup cursor and device queries through IPC', 
       ipcMain.handle('terminal:kill', () => {});
     }, directory);
     const page = await wideDesktopWindow(app);
-    await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
-    await page.getByRole('button', { name: 'terminal', exact: true }).click();
+    await addWorkspaceProject(page);
+    await openWorkspaceTool(page, 'terminal');
     await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
     await expect(page.locator('.terminal-panel')).toContainText('CURSOR_QUERY_VERIFIED');
     await expect(page.locator('.terminal-panel')).toContainText('DEVICE_QUERY_VERIFIED');
@@ -264,8 +268,8 @@ test('terminal button opens a real shell without a model, captures startup outpu
       })) as typeof dialog.showMessageBox;
     }, directory);
     const page = await wideDesktopWindow(app);
-    await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
-    await page.getByRole('button', { name: 'terminal', exact: true }).click();
+    await addWorkspaceProject(page);
+    await openWorkspaceTool(page, 'terminal');
     await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
     await expect(page.locator('.xterm')).toBeVisible();
     if (process.platform === 'win32')
@@ -280,6 +284,22 @@ test('terminal button opens a real shell without a model, captures startup outpu
     );
     await input.press('Enter');
     await expect(page.locator('.terminal-panel')).toContainText('FORGE_UI_VERIFIED');
+    await page.keyboard.insertText(
+      process.platform === 'win32'
+        ? "Write-Output ('中文终端_日本語_' + 'VERIFIED')"
+        : "printf '%s_%s\\n' '中文终端_日本語' VERIFIED",
+    );
+    await input.press('Enter');
+    await expect(page.locator('.terminal-panel')).toContainText('中文终端_日本語_VERIFIED');
+    expect(
+      await page.evaluate(() =>
+        [...document.fonts].some(
+          (font) => font.family.includes('Hikari Powerline Symbols') && font.status === 'loaded',
+        ),
+      ),
+    ).toBe(true);
+    await expect(page.locator('.terminal-panel')).not.toContainText('\uFFFD');
+    await page.screenshot({ path: 'test-results/terminal-unicode.png' });
     await input.pressSequentially('exit');
     await input.press('Enter');
     await expect(

@@ -100,7 +100,7 @@ export class SyncClient {
         version: record.version,
       });
     }
-    return result;
+    return result.map((record) => ({ ...record, data: record.data }));
   }
   remote(id: string) {
     if (!this.token) throw new Error('Sign in first');

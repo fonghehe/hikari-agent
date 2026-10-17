@@ -4,6 +4,6 @@ export default defineConfig({
   // Windows runners need more time for native Electron startup and screenshots.
   timeout: process.platform === 'win32' ? 60000 : 30000,
   expect: { timeout: process.platform === 'win32' ? 15000 : 5000 },
-  use: { trace: 'retain-on-failure' },
+  use: { trace: 'retain-on-failure', channel: process.env.HIKARI_TEST_BROWSER_CHANNEL },
   workers: 1,
 });

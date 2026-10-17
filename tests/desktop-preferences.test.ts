@@ -1,10 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { preferencesSchema } from '../packages/shared/src';
-import { buildFileTree } from '../apps/desktop/src/renderer/file-tree';
-import { translate, translations } from '../apps/desktop/src/renderer/i18n';
+import { buildFileTree, expandSourceLevel } from '../apps/desktop/src/renderer/file-tree';
+import { translate, translations, localizedError } from '../apps/desktop/src/renderer/i18n';
 import { resolveTheme } from '../apps/desktop/src/renderer/preferences';
 
 describe('desktop preferences and explorer', () => {
+  it('localizes validation messages inside Electron error wrappers', () => {
+    const reason = new Error(
+      "Error invoking remote method 'sections:create': Error: A section with this name already exists",
+    );
+    expect(localizedError(reason, 'zh-CN')).toBe('已存在同名分区');
+    expect(localizedError(reason, 'ja')).toBe('同じ名前のセクションが既に存在します');
+    expect(localizedError(new Error('Unexpected diagnostic'), 'zh-CN')).toBe(
+      'Unexpected diagnostic',
+    );
+  });
   it('validates persisted settings and resolves system appearance', () => {
     expect(preferencesSchema.parse({})).toEqual({ theme: 'dark', language: 'en' });
     expect(preferencesSchema.safeParse({ theme: 'blue', language: 'fr' }).success).toBe(false);
@@ -57,5 +67,27 @@ describe('desktop preferences and explorer', () => {
         expect(placeholders(value), key).toEqual(placeholders(key));
       }
     }
+  });
+  it('expands one source level while leaving dependencies and build output closed', () => {
+    const tree = buildFileTree([
+      'apps/web/src/main.ts',
+      'apps/web/dist/app.js',
+      'src/nested/file.ts',
+      'node_modules/pkg/index.js',
+      '.turbo/cache/entry.json',
+      'dist/assets/app.js',
+    ]);
+    const initial = new Set<string>();
+    const first = expandSourceLevel(tree, initial);
+    expect([...first].sort()).toEqual(['apps', 'src']);
+    expect(initial.size).toBe(0);
+    const second = expandSourceLevel(tree, first);
+    expect([...second].sort()).toEqual(['apps', 'apps/web', 'src', 'src/nested']);
+    const third = expandSourceLevel(tree, second);
+    expect(third.has('apps/web/src')).toBe(true);
+    expect(third.has('apps/web/dist')).toBe(false);
+    expect(third.has('node_modules')).toBe(false);
+    const manuallyOpened = new Set([...third, 'node_modules']);
+    expect(expandSourceLevel(tree, manuallyOpened).has('node_modules/pkg')).toBe(false);
   });
 });

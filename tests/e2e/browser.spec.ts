@@ -11,7 +11,10 @@ test('browser tools inspect, interact and capture a real local page', async () =
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Missing address');
-  const browser = new BrowserService({ emit() {} });
+  const browser = new BrowserService(
+    { emit() {} },
+    process.env.HIKARI_TEST_BROWSER_CHANNEL as 'chrome' | 'msedge' | undefined,
+  );
   try {
     await expect(browser.open('file:///etc/passwd')).rejects.toThrow('HTTP');
     expect(await browser.open(`http://127.0.0.1:${address.port}`)).toContain('Browser fixture');

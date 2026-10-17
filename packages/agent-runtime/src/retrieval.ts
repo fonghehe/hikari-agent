@@ -3,7 +3,7 @@ import { Document } from '@langchain/core/documents';
 import type { EmbeddingsInterface } from '@langchain/core/embeddings';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { createHash } from 'node:crypto';
-import { AgentError, searchTerms } from '@hikari/agent-core';
+import { AgentError, searchTerms, redact, redactText } from '@hikari/agent-core';
 export interface RetrievalDocument {
   text: string;
   metadata: Record<string, unknown>;
@@ -73,6 +73,12 @@ export class HybridRetriever extends BaseRetriever {
   }
   async _getRelevantDocuments(query: string) {
     this.signal.throwIfAborted();
+    query = redactText(query);
+    this.documents = this.documents.map((doc) => ({
+      ...doc,
+      text: redactText(doc.text),
+      metadata: redact(doc.metadata) as Record<string, unknown>,
+    }));
     const terms = searchTerms(query);
     const lexical = this.documents
       .map((doc, index) => ({

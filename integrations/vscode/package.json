@@ -1,0 +1,101 @@
+{
+  "name": "hikari-workspace",
+  "displayName": "Hikari Workspace",
+  "description": "Run and review Hikari tasks with editor selections and diagnostics.",
+  "publisher": "hikari-agent",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.cjs",
+  "activationEvents": [
+    "onView:hikari.tasks"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "hikari.tasks",
+          "name": "Hikari Tasks"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "hikari.connect",
+        "title": "Hikari: Connect to Local Host"
+      },
+      {
+        "command": "hikari.start",
+        "title": "Hikari: Start Task with Editor Context"
+      },
+      {
+        "command": "hikari.review",
+        "title": "Hikari: Review Current Changes"
+      },
+      {
+        "command": "hikari.refresh",
+        "title": "Hikari: Refresh Tasks"
+      },
+      {
+        "command": "hikari.show",
+        "title": "Hikari: Show Task"
+      },
+      {
+        "command": "hikari.control",
+        "title": "Hikari: Control Task"
+      },
+      {
+        "command": "hikari.approve",
+        "title": "Hikari: Respond to Approval or Question"
+      },
+      {
+        "command": "hikari.diff",
+        "title": "Hikari: Open Task Diff"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "hikari.start",
+          "when": "view == hikari.tasks",
+          "group": "navigation"
+        },
+        {
+          "command": "hikari.refresh",
+          "when": "view == hikari.tasks",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "hikari.control",
+          "when": "view == hikari.tasks"
+        },
+        {
+          "command": "hikari.approve",
+          "when": "view == hikari.tasks"
+        },
+        {
+          "command": "hikari.diff",
+          "when": "view == hikari.tasks"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "hikari.start",
+          "when": "resourceScheme == file"
+        }
+      ]
+    }
+  }
+}

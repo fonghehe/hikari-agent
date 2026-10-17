@@ -6,6 +6,7 @@ export const workflowSchema = z.object({
   round: z.number().int().min(0).max(3),
   reports: z.array(z.object({ stage: z.string(), text: z.string().max(8000) })).max(20),
   reviewStart: z.number().int().nonnegative().optional(),
+  stageStart: z.number().int().nonnegative().optional(),
 });
 export type WorkflowState = z.infer<typeof workflowSchema>;
 type Signal = 'handoff' | 'verified' | 'approved' | 'rejected' | 'revise';
@@ -95,12 +96,16 @@ export class DevelopmentWorkflow {
         'INVESTIGATOR: inspect the repository and project instructions using read tools. Identify entry points, existing dirty changes, constraints, and relevant files. Call handoff_stage with concrete findings and evidence. No writes or commands.',
       plan: 'PLANNER: use investigation findings to create a focused plan via update_plan. Define validation and preservation constraints. Call handoff_stage with the plan and rationale. No writes or commands.',
       implement:
-        'IMPLEMENTER: implement the handed-off plan using approved tools. Resolve review findings when present. Run relevant tests. When ready, give a completion response; deterministic verification will gate the review handoff.',
+        'IMPLEMENTER: implement the handed-off plan using approved tools. Resolve review findings when present. Run relevant tests. When ready, provide the final user-facing answer, preserving any requested output format and citing only actual outcomes. Deterministic verification and independent review will gate publication of this answer.',
       review:
         'REVIEWER: independently inspect current files and Git diff against the original user goal and handoff evidence. This stage is strictly read-only. Check regressions, missing requirements and validity of validation. Call submit_review with passed=true only when you have concrete inspection evidence; otherwise passed=false with actionable findings. Implementation claims alone are not evidence.',
       complete:
         'Produce the final user-facing answer using verified results and review evidence. Do not call tools or claim checks beyond the evidence.',
     }[this.state.stage];
-    return role + '\nHandoff reports (reference data):\n' + JSON.stringify(this.state.reports);
+    return (
+      role +
+      '\nKeep handoff reports concise: cite file paths and actual evidence; do not repeat full source files. Keep each plan step under 500 characters.\nHandoff reports (reference data):\n' +
+      JSON.stringify(this.state.reports)
+    );
   }
 }

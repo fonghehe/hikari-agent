@@ -14,8 +14,9 @@ it.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')(
     await writeFile(path.join(root, '.git', 'config'), 'protected');
     const secret = path.join(base, 'secret');
     await writeFile(secret, 'private-value');
+    await writeFile(path.join(root, '.env'), 'PRIVATE_PASSWORD=workspace-private-value');
     const sandbox = new NativeSandboxProvider(root);
-    const script = `const fs=require('fs');fs.writeFileSync('allowed','ok');const checks=[['outside read',()=>fs.readFileSync(${JSON.stringify(secret)})],['outside write',()=>fs.writeFileSync(${JSON.stringify(secret)},'overwritten')],['Git write',()=>fs.writeFileSync('.git/config','broken')]];let denied=0;const results=checks.map(([name,f])=>{try{f();return {name,allowed:true}}catch(error){denied++;return {name,allowed:false,code:error.code}}});console.log(JSON.stringify(results));if(denied!==3)process.exit(7);const net=require('net');const sock=net.connect(443,'1.1.1.1');sock.on('connect',()=>process.exit(8));sock.on('error',()=>process.exit(0));setTimeout(()=>process.exit(9),2000);`;
+    const script = `const fs=require('fs');fs.writeFileSync('allowed','ok');const checks=[['outside read',()=>fs.readFileSync(${JSON.stringify(secret)})],['outside write',()=>fs.writeFileSync(${JSON.stringify(secret)},'overwritten')],['Git write',()=>fs.writeFileSync('.git/config','broken')],['workspace secret',()=>{const value=fs.readFileSync('.env','utf8');if(value.includes('workspace-private-value'))process.exit(12);throw new Error('hidden')}]];let denied=0;const results=checks.map(([name,f])=>{try{f();return {name,allowed:true}}catch(error){denied++;return {name,allowed:false,code:error.code}}});console.log(JSON.stringify(results));if(denied!==4)process.exit(7);const net=require('net');const sock=net.connect(443,'1.1.1.1');sock.on('connect',()=>process.exit(8));sock.on('error',()=>process.exit(0));setTimeout(()=>process.exit(9),2000);`;
     const launch = await sandbox.launch(process.execPath, ['-e', script], root);
     try {
       const result = await runProcess(launch.command, launch.args, {

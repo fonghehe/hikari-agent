@@ -98,7 +98,7 @@ export class MCPService {
               signal: ctx.signal,
             });
             return {
-              content: JSON.stringify(result).slice(0, 24000),
+              content: JSON.stringify(result),
               error: result.isError === true,
             };
           },
@@ -120,7 +120,7 @@ export class MCPService {
               { uri: input.uri },
               { timeout: 15000, signal: ctx.signal },
             );
-            return { content: JSON.stringify(result).slice(0, 24000) };
+            return { content: JSON.stringify(result) };
           },
         });
         registered.push(toolName);
@@ -139,7 +139,7 @@ export class MCPService {
           async execute(input, ctx) {
             if (!allowed.has(input.name)) throw new Error('Prompt is not listed by this server');
             const result = await client.getPrompt(input, { timeout: 15000, signal: ctx.signal });
-            return { content: JSON.stringify(result).slice(0, 24000) };
+            return { content: JSON.stringify(result) };
           },
         });
         registered.push(toolName);
@@ -171,20 +171,25 @@ export function registerMCPTools(
   execution?: SandboxProvider,
   headers?: (name: string) => Record<string, string> | undefined,
   configurationRoot = root,
+  additionalConfigs?: () => Promise<Record<string, MCPConnection>>,
 ) {
   const service = new MCPService(registry, events, root, execution, headers);
   const sandbox = new LogicalSandboxProvider();
   const configs = async () => {
+    const additional = (await additionalConfigs?.()) ?? {};
     try {
-      return z
-        .record(connectionSchema)
-        .parse(
-          JSON.parse(
-            await readFile(await sandbox.resolve(configurationRoot, '.agent/mcp.json'), 'utf8'),
+      return {
+        ...additional,
+        ...z
+          .record(connectionSchema)
+          .parse(
+            JSON.parse(
+              await readFile(await sandbox.resolve(configurationRoot, '.agent/mcp.json'), 'utf8'),
+            ),
           ),
-        );
+      };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return additional;
       throw error;
     }
   };

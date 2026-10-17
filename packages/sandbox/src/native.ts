@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, stat } from 'node:fs/promises';
+import { sensitiveFiles } from './sensitive-files';
 import { tmpdir, homedir } from 'node:os';
 import { AgentError } from '@hikari/agent-core';
 import { LogicalSandboxProvider, type SandboxProvider } from './logical';
@@ -9,17 +10,22 @@ export interface ProcessLaunch {
   args: string[];
   env: NodeJS.ProcessEnv;
   cleanup(): Promise<void>;
+  pathMappings?: { from: string; to: string }[];
 }
 export class NativeSandboxProvider extends LogicalSandboxProvider implements SandboxProvider {
   constructor(
     readonly root: string,
     readonly network = false,
+    readonly readOnlyRoots: string[] = [],
   ) {
     super();
   }
   async launch(command: string, args: string[], cwd: string): Promise<ProcessLaunch> {
     this.validateCommand(command, args);
     const root = await realpath(this.root);
+    const extraReadRoots = await Promise.all(
+      this.readOnlyRoots.map((directory) => realpath(directory)),
+    );
     cwd = await realpath(cwd);
     await this.resolve(root, path.relative(root, cwd));
     const temporary = await realpath(await mkdtemp(path.join(tmpdir(), 'hikari-exec-')));
@@ -53,6 +59,7 @@ export class NativeSandboxProvider extends LogicalSandboxProvider implements San
       TEMP: temporary,
     };
     try {
+      const hidden = await sensitiveFiles(root);
       if (process.platform === 'darwin') {
         if (!existsSync('/usr/bin/sandbox-exec'))
           throw new Error('macOS sandbox-exec is unavailable');
@@ -62,6 +69,7 @@ export class NativeSandboxProvider extends LogicalSandboxProvider implements San
           temporary,
           runtimeRoot,
           nodeRoot,
+          ...extraReadRoots,
           ...(existsSync(corepackHome) ? [corepackHome] : []),
           '/usr',
           '/bin',
@@ -72,10 +80,18 @@ export class NativeSandboxProvider extends LogicalSandboxProvider implements San
           '/opt/homebrew',
           '/dev',
         ];
-        const profile = `(version 1)(deny default)(allow process*)(allow signal (target same-sandbox))(allow sysctl-read)(allow file-read-metadata)(allow file-read-data (vnode-type DIRECTORY))(allow file-read-data (literal "/private/etc/localtime") (literal "/private/etc/hosts") (literal "/private/etc/resolv.conf"))(allow file-read* ${readable.map(sub).join(' ')})(allow file-write* ${sub(root)} ${sub(temporary)} (literal "/dev/null"))(deny file-write* ${sub(path.join(root, '.git'))} ${sub(path.join(root, '.agent'))})(deny file-read* ${sub(path.join(root, '.agent', 'runs'))} ${sub(path.join(root, '.agent', 'evals'))})(allow mach-lookup (global-name "com.apple.system.logger"))${this.network ? '(allow network*)' : ''}`;
+        const profile = `(version 1)(deny default)(allow process*)(allow signal (target same-sandbox))(allow sysctl-read)(allow file-read-metadata)(allow file-read-data (vnode-type DIRECTORY))(allow file-read-data (literal "/private/etc/localtime") (literal "/private/etc/hosts") (literal "/private/etc/resolv.conf"))(allow file-read* ${readable.map(sub).join(' ')})(allow file-write* ${sub(root)} ${sub(temporary)} (literal "/dev/null"))(deny file-write* ${sub(path.join(root, '.git'))} ${sub(path.join(root, '.agent'))})(deny file-read* ${['runs', 'evals', 'state'].map((folder) => sub(path.join(root, '.agent', folder))).join(' ')})(allow mach-lookup (global-name "com.apple.system.logger"))${this.network ? '(allow network*)' : ''}`;
         return {
           command: '/usr/bin/sandbox-exec',
-          args: ['-p', profile, command, ...args],
+          args: [
+            '-p',
+            profile +
+              (hidden.length
+                ? `(deny file-read* ${hidden.map(sub).join(' ')})(deny file-write* ${hidden.map(sub).join(' ')})`
+                : ''),
+            command,
+            ...args,
+          ],
           env,
           cleanup,
         };
@@ -100,6 +116,7 @@ export class NativeSandboxProvider extends LogicalSandboxProvider implements San
         for (const directory of [...new Set([runtimeRoot, nodeRoot, corepackHome])])
           if (existsSync(directory) && !directory.startsWith('/usr/'))
             flags.push('--ro-bind', directory, directory);
+        for (const directory of extraReadRoots) flags.push('--ro-bind', directory, directory);
         flags.push(
           '--proc',
           '/proc',
@@ -116,10 +133,13 @@ export class NativeSandboxProvider extends LogicalSandboxProvider implements San
           flags.push('--ro-bind', path.join(root, '.git'), path.join(root, '.git'));
         if (existsSync(path.join(root, '.agent'))) {
           flags.push('--ro-bind', path.join(root, '.agent'), path.join(root, '.agent'));
-          for (const folder of ['runs', 'evals'])
+          for (const folder of ['runs', 'evals', 'state'])
             if (existsSync(path.join(root, '.agent', folder)))
               flags.push('--tmpfs', path.join(root, '.agent', folder));
         }
+        for (const filename of hidden)
+          if ((await stat(filename)).isDirectory()) flags.push('--tmpfs', filename);
+          else flags.push('--ro-bind', '/dev/null', filename);
         // bwrap creates ancestor directories for bind targets in its root tmpfs.
         // Keep those outside-workspace paths read-only; the workspace and temporary
         // bind mounts remain writable and protected metadata stays read-only.
@@ -161,7 +181,7 @@ export class NativeSandboxProvider extends LogicalSandboxProvider implements San
             `type=bind,source=${path.join(root, '.git')},target=/workspace/.git,readonly`,
           );
         if (existsSync(path.join(root, '.agent'))) {
-          for (const folder of ['runs', 'evals'])
+          for (const folder of ['runs', 'evals', 'state'])
             if (existsSync(path.join(root, '.agent', folder)))
               flags.push('--tmpfs', `/workspace/.agent/${folder}:ro,size=1m`);
           flags.push(
@@ -169,8 +189,27 @@ export class NativeSandboxProvider extends LogicalSandboxProvider implements San
             `type=bind,source=${path.join(root, '.agent')},target=/workspace/.agent,readonly`,
           );
         }
-        flags.push('hikari-sandbox:local', containerCommand, ...args);
-        return { command: 'docker', args: flags, env, cleanup };
+        const empty = path.join(temporary, 'redacted');
+        await writeFile(empty, '', { mode: 0o600 });
+        for (const filename of hidden) {
+          const target = '/workspace/' + path.relative(root, filename).split(path.sep).join('/');
+          if ((await stat(filename)).isDirectory()) flags.push('--tmpfs', `${target}:ro,size=1m`);
+          else flags.push('--mount', `type=bind,source=${empty},target=${target},readonly`);
+        }
+        const pathMappings = [
+          { from: root, to: '/workspace' },
+          ...extraReadRoots.map((from, index) => ({ from, to: `/hikari-extensions/${index}` })),
+        ];
+        for (const mapping of pathMappings.slice(1))
+          flags.push('--mount', `type=bind,source=${mapping.from},target=${mapping.to},readonly`);
+        const mappedArgs = args.map((arg) => {
+          for (const mapping of [...pathMappings].sort((a, b) => b.from.length - a.from.length))
+            if (arg === mapping.from || arg.startsWith(mapping.from + path.sep))
+              return mapping.to + arg.slice(mapping.from.length).split(path.sep).join('/');
+          return arg;
+        });
+        flags.push('hikari-sandbox:local', containerCommand, ...mappedArgs);
+        return { command: 'docker', args: flags, env, cleanup, pathMappings };
       }
       throw new Error('This OS has no supported sandbox');
     } catch (error) {

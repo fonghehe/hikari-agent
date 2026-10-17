@@ -1,4 +1,4 @@
-import { tr } from './i18n';
+import { tr, localizedError } from './i18n';
 import { create } from 'zustand';
 import type { AgentEvent, Task, RunOptions } from '@hikari/agent-core';
 import type { DesktopAPI, Workspace } from '@hikari/shared';
@@ -19,12 +19,16 @@ interface Store {
   tasks: Task[];
   events: AgentEvent[];
   activeId: string | null;
+  draftSection: string | null;
   error: string;
   configured: boolean;
   starting: boolean;
   opening: boolean;
+  projectsRevision: number;
   notice: string;
-  open(): Promise<void>;
+  open(kind?: 'directory' | 'file'): Promise<boolean>;
+  addProject(path: string, name?: string): Promise<boolean>;
+  selectWorkspace(root: string | null): Promise<boolean>;
   refresh(): Promise<void>;
   start(
     prompt: string,
@@ -41,21 +45,51 @@ export const useStore = create<Store>((set, get) => ({
   tasks: [],
   events: [],
   activeId: null,
+  draftSection: null,
   error: '',
   configured: false,
   starting: false,
   opening: false,
+  projectsRevision: 0,
   notice: '',
-  async open() {
-    if (get().opening) return;
+  async open(kind) {
+    if (get().opening || get().starting) return false;
     set({ opening: true });
     try {
-      const workspace = await api().workspace.open();
+      const workspace = await api().workspace.open(kind);
       if (workspace)
-        set({ workspace, error: '', notice: tr('Opened {name}', { name: workspace.name }) });
+        set({
+          workspace,
+          activeId: null,
+          error: '',
+          notice: tr('Opened {name}', { name: workspace.name }),
+          projectsRevision: get().projectsRevision + 1,
+        });
       else set({ notice: tr('Workspace selection cancelled.') });
+      return !!workspace;
     } catch (error) {
-      set({ error: String(error) });
+      set({ error: localizedError(error) });
+      return false;
+    } finally {
+      set({ opening: false });
+    }
+  },
+  async addProject(path, name) {
+    if (get().opening || get().starting) return false;
+    set({ opening: true });
+    try {
+      const workspace = await api().workspace.add({ path, name });
+      set({
+        workspace,
+        activeId: null,
+        error: '',
+        notice: '',
+        projectsRevision: get().projectsRevision + 1,
+      });
+      return true;
+    } catch (error) {
+      set({ error: localizedError(error) });
+      return false;
     } finally {
       set({ opening: false });
     }
@@ -65,13 +99,41 @@ export const useStore = create<Store>((set, get) => ({
     const tasks = await api().agent.list();
     if (sequence === refreshSequence) set({ tasks });
   },
+  async selectWorkspace(root) {
+    if (get().opening || get().starting) return false;
+    if (get().workspace?.root === root || (!root && !get().workspace)) {
+      set({ activeId: null, error: '', notice: '' });
+      return true;
+    }
+    set({ opening: true });
+    try {
+      const workspace = root
+        ? await api().workspace.select(root)
+        : (await api().workspace.clear(), null);
+      set({ workspace, activeId: null, error: '', notice: '' });
+      return true;
+    } catch (error) {
+      set({ error: localizedError(error) });
+      return false;
+    } finally {
+      set({ opening: false });
+    }
+  },
   async start(prompt, isolated, parentTaskId, options, attachmentIds) {
-    if (get().starting) return false;
+    if (get().starting || get().opening) return false;
     set({ starting: true, error: '', notice: tr('Starting task…') });
     try {
-      const task = await api().agent.start(prompt, isolated, parentTaskId, options, attachmentIds);
+      const task = await api().agent.start(
+        prompt,
+        isolated,
+        parentTaskId,
+        options,
+        attachmentIds,
+        parentTaskId ? undefined : (get().draftSection ?? undefined),
+      );
       set((state) => ({
         activeId: task.id,
+        draftSection: null,
         error: '',
         notice: '',
         tasks: [...state.tasks.filter((old) => old.id !== task.id), task],
@@ -79,7 +141,7 @@ export const useStore = create<Store>((set, get) => ({
       await get().refresh();
       return true;
     } catch (error) {
-      set({ error: String(error) });
+      set({ error: localizedError(error) });
       return false;
     } finally {
       set({ starting: false });
@@ -101,7 +163,7 @@ export const useStore = create<Store>((set, get) => ({
     )
       void get()
         .refresh()
-        .catch((error) => set({ error: String(error) }));
+        .catch((error) => set({ error: localizedError(error) }));
   },
 }));
 export async function perform(action: () => Promise<unknown>) {
@@ -109,6 +171,6 @@ export async function perform(action: () => Promise<unknown>) {
     await action();
     useStore.setState({ error: '' });
   } catch (error) {
-    useStore.setState({ error: String(error) });
+    useStore.setState({ error: localizedError(error) });
   }
 }

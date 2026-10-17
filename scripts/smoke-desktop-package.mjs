@@ -41,7 +41,9 @@ try {
   expect(metadata).toEqual({ packaged: true, name: 'Hikari', icon: true });
   const page = await app.firstWindow();
   expect(await page.evaluate(() => typeof globalThis.require)).toBe('undefined');
-  await expect(page.getByRole('heading', { name: /A little direction/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'What would you like to work on?', exact: true }),
+  ).toBeVisible();
   await page.getByRole('textbox', { name: 'Task prompt', exact: true }).fill('你好');
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await expect(page.locator('[data-event-type="agent.completed"]')).toContainText('你好！');
@@ -59,12 +61,13 @@ try {
   await expect(page.locator('.composer .attachment-chip')).toHaveCount(3);
   await page.getByRole('button', { name: 'Preview design.png', exact: true }).click();
   await expect(page.locator('.attachment-full-image')).toBeVisible();
-  await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   const answer = page.locator('[data-event-type="agent.completed"]');
   await expect(answer).toContainText('revenue 1200');
   await expect(answer).toContainText('attachment questions');
   await expect(answer).toContainText('demo does not interpret');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'Appearance & language', exact: true }).click();
   await page.getByRole('button', { name: 'Light', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -72,13 +75,14 @@ try {
     theme: 'light',
     language: 'en',
   });
-  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await app.evaluate(({ dialog }, directory) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] });
     dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
   }, directory);
   await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
   await page.getByRole('button', { name: /New task/ }).click();
+  await page.getByRole('button', { name: 'Workspace tools', exact: true }).click();
   await page.getByRole('button', { name: 'terminal', exact: true }).click();
   await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
   if (process.platform === 'win32')

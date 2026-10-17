@@ -16,6 +16,7 @@ import {
 } from '../packages/agent-runtime/src';
 import type { RunnerCheckpoint } from '../packages/agent-runtime/src';
 import type { ModelProvider, ModelResponse, ModelRequest } from '../packages/agent-core/src';
+import { AgentError } from '../packages/agent-core/src';
 function fixture(responses: ModelResponse[]) {
   const tasks = new TaskManager();
   const task = tasks.create('finish task', '/tmp');
@@ -50,6 +51,36 @@ function fixture(responses: ModelResponse[]) {
   };
   return { task, deps, tools, events, messages, saved: () => saved };
 }
+it('recovers malformed model calls without executing partial actions and bounds repeated malformed responses', async () => {
+  const f = fixture([]);
+  let attempts = 0;
+  f.deps.provider.stream = async function* () {
+    yield { text: '', toolCalls: [], usage: { inputTokens: 10, outputTokens: 2 } };
+    if (++attempts === 1)
+      throw new AgentError('INVALID_TOOL_CALL', 'Malformed JSON; no tools executed.');
+    yield { text: 'Recovered', toolCalls: [], usage: { inputTokens: 10, outputTokens: 2 } };
+  };
+  await new AgentRunner(f.task, f.deps).run();
+  expect(f.task.status).toBe('completed');
+  expect(f.task.runSummary).toMatchObject({
+    modelSteps: 2,
+    toolCalls: 0,
+    inputTokens: 20,
+    outputTokens: 4,
+  });
+  expect(f.task.events.filter((event) => event.type === 'agent.response.rejected')).toHaveLength(1);
+  const repeated = fixture([]);
+  repeated.deps.provider.stream = async function* () {
+    yield { text: '', toolCalls: [], usage: { inputTokens: 10, outputTokens: 2 } };
+    throw new AgentError('INVALID_TOOL_CALL', 'Malformed JSON; no tools executed.');
+  };
+  await new AgentRunner(repeated.task, repeated.deps).run();
+  expect(repeated.task.runSummary).toMatchObject({
+    modelSteps: 3,
+    toolCalls: 0,
+    stopReason: 'INVALID_TOOL_CALL',
+  });
+});
 it('rejects completion when deterministic acceptance remains false', async () => {
   const f = fixture([]);
   const runner = new AgentRunner(f.task, {
@@ -331,4 +362,224 @@ it('does not replay uncertain side effects or accept stale test evidence after r
     },
   }).run();
   expect(repeated.task.runSummary?.stopReason).toBe('ACCEPTANCE_FAILED');
+});
+
+it('finishes verified work on the last model step without another billed request or forged tool turn', async () => {
+  const f = fixture([
+    { text: 'Implemented', toolCalls: [], usage: { inputTokens: 950, outputTokens: 49 } },
+  ]);
+  f.task.runOptions = {
+    mode: 'execute',
+    maxSteps: 1,
+    maxTokens: 1000,
+    checks: [
+      { id: 'test', label: 'Acceptance', kind: 'test', command: 'node', args: ['test'], cwd: '.' },
+    ],
+  };
+  f.deps.provider.countTokens = () => 1;
+  f.tools.register({
+    name: 'run_tests',
+    description: 'acceptance',
+    permission: 'shell.execute',
+    schema: z.object({ command: z.string(), args: z.array(z.string()), cwd: z.string() }),
+    async execute() {
+      return { content: 'passed', metadata: { exitCode: 0 } };
+    },
+  });
+  await new AgentRunner(f.task, f.deps).run();
+  expect(f.task.status).toBe('completed');
+  expect(f.messages).toHaveLength(1);
+  expect(f.task.runSummary).toMatchObject({
+    modelSteps: 1,
+    inputTokens: 950,
+    outputTokens: 49,
+    verification: { passed: true },
+  });
+  expect(
+    f.saved()?.messages.some((message) => message.role === 'tool' || message.toolCalls?.length),
+  ).toBe(false);
+});
+
+it('returns failed runtime acceptance as feedback without inventing provider tool calls', async () => {
+  const f = fixture([
+    { text: 'Ready', toolCalls: [] },
+    { text: 'Retry acceptance', toolCalls: [] },
+  ]);
+  f.task.runOptions = {
+    mode: 'execute',
+    maxSteps: 2,
+    checks: [
+      { id: 'test', label: 'Acceptance', kind: 'test', command: 'node', args: [], cwd: '.' },
+    ],
+  };
+  let tests = 0;
+  f.tools.register({
+    name: 'run_tests',
+    description: 'acceptance',
+    permission: 'shell.execute',
+    schema: z.object({}),
+    async execute() {
+      const exitCode = ++tests === 1 ? 1 : 0;
+      return { content: 'check outcome', error: exitCode !== 0, metadata: { exitCode } };
+    },
+  });
+  await new AgentRunner(f.task, f.deps).run();
+  // Failed tests are current evidence, so the model must actually ask to rerun
+  // or change the implementation; merely repeating a final answer cannot pass.
+  expect(f.task.status).toBe('failed');
+  expect(f.task.runSummary?.verification?.passed).toBe(false);
+  expect(tests).toBe(1);
+  const retry = f.messages[1]!.messages;
+  expect(retry.some((message) => message.content.includes('Completion rejected'))).toBe(true);
+  expect(retry.some((message) => message.role === 'tool' || message.toolCalls?.length)).toBe(false);
+});
+
+it('restores interrupted runtime acceptance without orphan tool results or replaying the interrupted command', async () => {
+  const f = fixture([{ text: 'Ready', toolCalls: [] }]);
+  f.task.runOptions = {
+    mode: 'execute',
+    maxSteps: 5,
+    checks: [
+      { id: 'test', label: 'Acceptance', kind: 'test', command: 'node', args: [], cwd: '.' },
+    ],
+  };
+  let executions = 0;
+  f.tools.register({
+    name: 'run_tests',
+    description: 'acceptance',
+    permission: 'shell.execute',
+    schema: z.object({}),
+    async execute(_input, ctx) {
+      if (++executions === 1)
+        await new Promise((_resolve, reject) =>
+          ctx.signal.addEventListener('abort', () => reject(ctx.signal.reason), { once: true }),
+        );
+      return { content: 'passed', metadata: { exitCode: 0 } };
+    },
+  });
+  const runner = new AgentRunner(f.task, f.deps);
+  const run = runner.run();
+  while (!executions) await new Promise((resolve) => setTimeout(resolve, 1));
+  runner.interrupt();
+  await run;
+  expect(f.saved()?.runtimeChecks).toBe(true);
+  expect(f.saved()?.pending[0]?.state).toBe('running');
+  const resumedTools = new ToolRegistry();
+  resumedTools.register({
+    name: 'run_tests',
+    description: 'acceptance',
+    permission: 'shell.execute',
+    schema: z.object({}),
+    async execute() {
+      executions++;
+      return { content: 'passed', metadata: { exitCode: 0 } };
+    },
+  });
+  await new AgentRunner(f.task, {
+    ...f.deps,
+    tools: resumedTools,
+    context: new ContextManager('system'),
+    restored: f.saved(),
+    requestUser: async () => 'Inspect and continue',
+  }).run();
+  expect(f.task.status).toBe('completed');
+  expect(executions).toBe(2);
+  for (const request of f.messages) {
+    for (const message of request.messages.filter((message) => message.role === 'tool'))
+      expect(
+        request.messages.some((previous) =>
+          previous.toolCalls?.some((call) => call.id === message.toolCallId),
+        ),
+      ).toBe(true);
+  }
+});
+
+it('does not accept a check that changed the workspace after the checked revision', async () => {
+  const f = fixture([
+    { text: 'Ready', toolCalls: [] },
+    { text: 'Verify current revision', toolCalls: [] },
+  ]);
+  f.task.runOptions = {
+    mode: 'execute',
+    maxSteps: 2,
+    checks: [
+      { id: 'test', label: 'Acceptance', kind: 'test', command: 'node', args: [], cwd: '.' },
+    ],
+  };
+  let calls = 0;
+  f.tools.register({
+    name: 'run_tests',
+    description: 'acceptance',
+    permission: 'shell.execute',
+    schema: z.object({}),
+    async execute() {
+      if (++calls === 1) f.events.emit('file.changed', { path: 'generated.mjs' });
+      return { content: 'passed', metadata: { exitCode: 0 } };
+    },
+  });
+  await new AgentRunner(f.task, f.deps).run();
+  expect(calls).toBe(2);
+  expect(
+    f.task.events
+      .filter((event) => event.type === 'agent.verification')
+      .map((event) => event.data.passed),
+  ).toEqual([false, true]);
+  expect(f.task.status).toBe('completed');
+});
+
+it('applies steering queued during automatic verification before completing', async () => {
+  const f = fixture([
+    { text: 'Old answer', toolCalls: [] },
+    { text: 'Updated answer', toolCalls: [] },
+  ]);
+  f.task.runOptions = {
+    mode: 'execute',
+    maxSteps: 2,
+    checks: [
+      { id: 'test', label: 'Acceptance', kind: 'test', command: 'node', args: [], cwd: '.' },
+    ],
+  };
+  f.tools.register({
+    name: 'run_tests',
+    description: 'acceptance',
+    permission: 'shell.execute',
+    schema: z.object({}),
+    async execute() {
+      runner.enqueue('Explain the revised target');
+      return { content: 'passed', metadata: { exitCode: 0 } };
+    },
+  });
+  const runner = new AgentRunner(f.task, f.deps);
+  await runner.run();
+  expect(f.task.status).toBe('completed');
+  expect(f.messages).toHaveLength(2);
+  expect(
+    f.messages[1]?.messages.some((message) => message.content === 'Explain the revised target'),
+  ).toBe(true);
+  expect(f.task.events.find((event) => event.type === 'agent.completed')?.data.text).toBe(
+    'Updated answer',
+  );
+});
+
+it('does not discard instructions received during asynchronous acceptance verification', async () => {
+  const f = fixture([
+    { text: 'Old answer', toolCalls: [] },
+    { text: 'Revised answer', toolCalls: [] },
+  ]);
+  let checks = 0;
+  const runner = new AgentRunner(f.task, {
+    ...f.deps,
+    verify: async () => {
+      if (++checks === 1) runner.enqueue('Include the new requirement');
+      return { passed: true, checks: [] };
+    },
+  });
+  await runner.run();
+  expect(f.messages).toHaveLength(2);
+  expect(
+    f.messages[1]?.messages.some((message) => message.content === 'Include the new requirement'),
+  ).toBe(true);
+  expect(f.task.events.find((event) => event.type === 'agent.completed')?.data.text).toBe(
+    'Revised answer',
+  );
 });

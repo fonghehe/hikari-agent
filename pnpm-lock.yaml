@@ -53,6 +53,9 @@ importers:
       '@hikari/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@hikari/agent-host':
+        specifier: workspace:*
+        version: link:../../packages/agent-host
       '@hikari/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
@@ -71,12 +74,18 @@ importers:
       '@hikari/tools':
         specifier: workspace:*
         version: link:../../packages/tools
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
 
   apps/desktop:
     dependencies:
       '@hikari/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@hikari/agent-host':
+        specifier: workspace:*
+        version: link:../../packages/agent-host
       '@hikari/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
@@ -207,9 +216,27 @@ importers:
       '@hikari/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@hikari/agent-host':
+        specifier: workspace:*
+        version: link:../../packages/agent-host
+      '@hikari/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@hikari/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@hikari/model-provider':
+        specifier: workspace:*
+        version: link:../../packages/model-provider
+      '@hikari/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
+      '@hikari/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@hikari/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(@types/pg@8.23.1)(pg@8.23.1)
@@ -228,6 +255,33 @@ importers:
 
   packages/agent-core:
     dependencies:
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
+
+  packages/agent-host:
+    dependencies:
+      '@hikari/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@hikari/agent-runtime':
+        specifier: workspace:*
+        version: link:../agent-runtime
+      '@hikari/git':
+        specifier: workspace:*
+        version: link:../git
+      '@hikari/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@hikari/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@hikari/skills':
+        specifier: workspace:*
+        version: link:../skills
+      '@hikari/tools':
+        specifier: workspace:*
+        version: link:../tools
       zod:
         specifier: ^3.25.0
         version: 3.25.76

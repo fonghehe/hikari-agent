@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { realpath, lstat } from 'node:fs/promises';
-import { AgentError } from '@hikari/agent-core';
+import { AgentError, sensitivePath } from '@hikari/agent-core';
 export interface SandboxProvider {
   resolve(root: string, target: string, write?: boolean): Promise<string>;
   validateCommand(command: string, args: string[]): void;
@@ -13,12 +13,17 @@ export class LogicalSandboxProvider implements SandboxProvider {
     const candidate = path.resolve(base, target);
     const assert = (p: string) => {
       const rel = path.relative(base, p);
+      if (sensitivePath(rel))
+        throw new AgentError(
+          'SENSITIVE_PATH',
+          'Sensitive files are excluded from agent access; configure credentials manually.',
+        );
       if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel))
         throw new AgentError('PATH_ESCAPE', 'Path is outside workspace');
       if (write && rel.split(path.sep).some((part) => part === '.git' || part === '.agent'))
         throw new AgentError('PROTECTED_PATH', 'Agent metadata and Git internals are protected');
       const parts = rel.split(path.sep);
-      if (parts[0] === '.agent' && ['runs', 'evals'].includes(parts[1] ?? ''))
+      if (parts[0] === '.agent' && ['runs', 'evals', 'state'].includes(parts[1] ?? ''))
         throw new AgentError('PROTECTED_PATH', 'Private run and evaluation data is protected');
     };
     assert(candidate);

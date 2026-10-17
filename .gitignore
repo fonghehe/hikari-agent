@@ -6,6 +6,7 @@ release/
 apps/desktop/resources/icons/
 /package/
 *.tgz
+*.vsix
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 .turbo/
@@ -38,6 +39,8 @@ docs/.vitepress/dist/
 # Test output and local temporary files
 test-results/
 playwright-report/
+blob-report/
+playwright/.auth/
 coverage/
 .nyc_output/
 *.lcov
@@ -66,3 +69,7 @@ Desktop.ini
 /apps/desktop/resources/browser/
 
 /apps/desktop/release.config.json
+
+# Local optimization notes; keep shared agent instructions and project documentation
+/design-system/hikari/MASTER.md
+/docs/superpowers/

@@ -58,6 +58,30 @@ const call = (id: string, name: string, input: unknown): ModelResponse => ({
   toolCalls: [{ id, name, input }],
 });
 
+it('explains invalid tool arguments to the model and never executes or approves them', async () => {
+  let writes = 0;
+  const s = fixture([call('bad', 'write_file', {})], (tools) =>
+    tools.register({
+      name: 'write_file',
+      description: 'Provide the path and expectedHash from read_file.',
+      permission: 'filesystem.write',
+      schema: z.object({ path: z.string(), expectedHash: z.string() }),
+      async execute() {
+        writes++;
+        return { content: 'written' };
+      },
+    }),
+  );
+  await s.runner.run();
+  expect(writes).toBe(0);
+  expect(s.approvals()).toBe(0);
+  const failed = s.task.events.find((event) => event.type === 'tool.failed')!;
+  expect(failed.data.error).toContain('path: Required');
+  expect(failed.data.error).toContain('expectedHash');
+  expect(failed.data.error).toContain('Correct the arguments');
+  expect(failed.data.error).toContain('Input schema:');
+});
+
 it('enforces Plan mode even if the model forges a hidden mutating tool call', async () => {
   let writes = 0;
   const plan = {

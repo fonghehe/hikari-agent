@@ -1,6 +1,12 @@
-import { TaskActions, WorktreeActions, RecentWorkspaces } from './task-actions';
+import { TaskActions, WorktreeActions } from './task-actions';
+import { SidebarSettings, WorkspaceTools } from './sidebar-menus';
+import { TaskNavigation } from './task-navigation';
+import { ComposerProject } from './composer-project';
+import { isProjectTask } from './project-navigation';
 import { WorkspaceSettings } from './workspace-settings';
-import { RunSettings, UserInput } from './run-settings';
+import { TaskOptions, UserInput } from './run-settings';
+import type { WorkspaceProject } from '@hikari/shared';
+import { Dialog } from './dialog';
 import type { RunOptions } from '@hikari/agent-core';
 import { useI18n } from './i18n';
 import { Answer } from './answer';
@@ -9,18 +15,19 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowUp,
+  BrainCircuit,
   FolderOpen,
   Plus,
   PanelRight,
+  SlidersHorizontal,
+  X,
   GitBranch,
   ChevronRight,
   FileCode2,
-  Settings2,
   Terminal,
-  Search,
-  Layers,
   ArrowUpRight,
   Sparkles,
+  List,
   Pause,
   Play,
   Square,
@@ -47,103 +54,120 @@ function Timeline({ events }: { events: AgentEvent[] }) {
   const { t, locale } = useI18n();
 
   const taskId = useStore((s) => s.activeId);
+  const visible = events.filter(
+    (event) =>
+      ![
+        'agent.message.delta',
+        'agent.state',
+        'tool.stdout',
+        'git.diff.updated',
+        'plan.updated',
+        'agent.run.summary',
+      ].includes(event.type),
+  );
+  const terminal = events.some((event) =>
+    ['agent.completed', 'agent.failed', 'agent.cancelled'].includes(event.type),
+  );
+  const foreground = (event: AgentEvent) =>
+    ['agent.completed', 'agent.failed', 'agent.cancelled'].includes(event.type) ||
+    (event.type === 'permission.requested' &&
+      !terminal &&
+      !events.some(
+        (other) =>
+          ['permission.approved', 'permission.denied'].includes(other.type) &&
+          other.data.id === (event.data.request as unknown as PermissionRequest)?.id,
+      ));
+  const activity = visible.filter((event) => !foreground(event));
+  const renderEvent = (event: AgentEvent) => {
+    const request =
+      event.type === 'permission.requested'
+        ? (event.data.request as unknown as PermissionRequest)
+        : null;
+    const settled =
+      request &&
+      events.some(
+        (e) =>
+          ['permission.approved', 'permission.denied'].includes(e.type) && e.data.id === request.id,
+      );
+    return (
+      <div
+        key={event.id}
+        data-event-type={event.type}
+        className={`timeline-item ${event.type === 'agent.completed' ? 'success' : ''}`}
+      >
+        <span className="timeline-dot" />
+        <details
+          open={
+            (!!request && !settled && !terminal) ||
+            ['agent.completed', 'agent.failed', 'agent.cancelled'].includes(event.type)
+          }
+        >
+          <summary>
+            {event.type === 'agent.completed' ? <CheckCircle2 size={14} /> : null}
+            {t(`event.${event.type}`)}
+            {event.data.tool ? ` · ${String(event.data.tool)}` : ''}
+            <time>{new Date(event.timestamp).toLocaleTimeString(locale)}</time>
+          </summary>
+          {['agent.completed', 'agent.message.delta'].includes(event.type) ? (
+            <Answer text={String(event.data.text)} />
+          ) : (
+            <pre>{JSON.stringify(event.data, null, 2)}</pre>
+          )}
+          {request && !settled && !terminal && (
+            <div className="approval">
+              <p>
+                {t(
+                  'Approve this operation? Commands and external tools run with your user account permissions.',
+                )}
+              </p>
+              {(['once', 'session', 'always', 'deny'] as Decision[]).map((decision) => (
+                <Button
+                  key={decision}
+                  variant={decision === 'deny' ? 'ghost' : 'outline'}
+                  onClick={() =>
+                    void perform(() => api().agent.approve(taskId!, request.id, decision))
+                  }
+                >
+                  {
+                    {
+                      once: t('Allow once'),
+                      session: t('Allow for session'),
+                      always: t('Always allow'),
+                      deny: t('Deny'),
+                    }[decision]
+                  }
+                </Button>
+              ))}
+            </div>
+          )}
+        </details>
+      </div>
+    );
+  };
   return (
     <div className="timeline">
-      {events
-        .filter(
-          (e) =>
-            ![
-              'agent.message.delta',
-              'agent.state',
-              'tool.stdout',
-              'git.diff.updated',
-              'plan.updated',
-              'agent.run.summary',
-            ].includes(e.type),
-        )
-        .map((event) => {
-          const request =
-            event.type === 'permission.requested'
-              ? (event.data.request as unknown as PermissionRequest)
-              : null;
-          const settled =
-            request &&
-            events.some(
-              (e) =>
-                ['permission.approved', 'permission.denied'].includes(e.type) &&
-                e.data.id === request.id,
-            );
-          const terminal = events.some((e) =>
-            ['agent.completed', 'agent.failed', 'agent.cancelled'].includes(e.type),
-          );
-          return (
-            <div
-              key={event.id}
-              data-event-type={event.type}
-              className={`timeline-item ${event.type === 'agent.completed' ? 'success' : ''}`}
-            >
-              <span className="timeline-dot" />
-              <details
-                open={
-                  (!!request && !settled && !terminal) ||
-                  ['agent.completed', 'agent.failed', 'agent.cancelled'].includes(event.type)
-                }
-              >
-                <summary>
-                  {event.type === 'agent.completed' ? <CheckCircle2 size={14} /> : null}
-                  {t(`event.${event.type}`)}
-                  {event.data.tool ? ` · ${String(event.data.tool)}` : ''}
-                  <time>{new Date(event.timestamp).toLocaleTimeString(locale)}</time>
-                </summary>
-                {['agent.completed', 'agent.message.delta'].includes(event.type) ? (
-                  <Answer text={String(event.data.text)} />
-                ) : (
-                  <pre>{JSON.stringify(event.data, null, 2)}</pre>
-                )}
-                {request && !settled && !terminal && (
-                  <div className="approval">
-                    <p>
-                      {t(
-                        'Approve this operation? Commands and external tools run with your user account permissions.',
-                      )}
-                    </p>
-                    {(['once', 'session', 'always', 'deny'] as Decision[]).map((decision) => (
-                      <Button
-                        key={decision}
-                        variant={decision === 'deny' ? 'ghost' : 'outline'}
-                        onClick={() =>
-                          void perform(() => api().agent.approve(taskId!, request.id, decision))
-                        }
-                      >
-                        {
-                          {
-                            once: t('Allow once'),
-                            session: t('Allow for session'),
-                            always: t('Always allow'),
-                            deny: t('Deny'),
-                          }[decision]
-                        }
-                      </Button>
-                    ))}
-                  </div>
-                )}
-              </details>
-            </div>
-          );
-        })}
+      {activity.length > 0 && (
+        <details className="agent-activity">
+          <summary>{t('Activity ({count})', { count: activity.length })}</summary>
+          {activity.map(renderEvent)}
+        </details>
+      )}
+      {visible.filter(foreground).map(renderEvent)}
     </div>
   );
 }
+
 function App() {
   const { t, locale } = useI18n();
 
   const fileRequest = useRef(0);
-  const { workspace, error, notice, open, opening, tasks, activeId, events, configured, starting } =
+  const { workspace, error, notice, open, tasks, activeId, events, configured, starting } =
     useStore();
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [history, setHistory] = useState(false);
+  useEffect(() => setHistory(false), [workspace]);
   const [showArchived, setShowArchived] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth > 1180);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [controlling, setControlling] = useState(false);
   const [browsing, setBrowsing] = useState<typeof workspace>(null);
   const [loadingFiles, setLoadingFiles] = useState(false);
@@ -154,7 +178,7 @@ function App() {
     const textarea = promptRef.current;
     if (textarea) {
       textarea.style.height = 'auto';
-      textarea.style.height = `${Math.max(100, Math.min(260, textarea.scrollHeight))}px`;
+      textarea.style.height = `${Math.max(activeId ? 64 : 100, Math.min(260, textarea.scrollHeight))}px`;
     }
   }, [prompt, activeId]);
   const [isolated, setIsolated] = useState(false);
@@ -163,11 +187,33 @@ function App() {
   const [maxSteps, setMaxSteps] = useState(30);
   const [taskSearch, setTaskSearch] = useState('');
   const [settings, setSettings] = useState(false);
-  const [workspaceSettings, setWorkspaceSettings] = useState(false);
+  const [taskOptions, setTaskOptions] = useState(false);
+  const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceProject | null>(null);
+  const [dataSettings, setDataSettings] = useState(false);
+  const [syncSettings, setSyncSettings] = useState(false);
   const [appearance, setAppearance] = useState(false);
-  const [tab, setTab] = useState<'files' | 'diff' | 'terminal' | 'browser' | 'sync'>('files');
+  const [tab, setTab] = useState<'files' | 'diff' | 'terminal' | 'browser'>('files');
   const [file, setFile] = useState<{ name: string; content: string }>();
+  const draftSection = useStore((state) => state.draftSection);
+  const currentSection =
+    tasks.find((task) => task.id === activeId)?.navigation?.section ??
+    (!activeId ? draftSection : null);
   const active = tasks.find((t) => t.id === activeId);
+  const projectSettingsRoot = active
+    ? isProjectTask(active)
+      ? active.workspace
+      : null
+    : workspace?.root;
+  const composerWorkspace = active?.chat
+    ? t('Conversation only')
+    : active?.demo
+      ? t('Demo · no workspace needed')
+      : active
+        ? (active.workspace
+            .replace(/[\\/]+$/, '')
+            .split(/[\\/]/)
+            .at(-1) ?? active.workspace)
+        : workspace?.name;
   const taskEvents = events.filter((e) => e.taskId === activeId);
   const visibleEvents = [
     ...new Map(
@@ -198,11 +244,20 @@ function App() {
         .filter((event) => event.type === 'agent.message.delta')
         .map((event) => String(event.data.text))
         .join('');
-  const newTask = () => {
-    useStore.setState({ activeId: null, error: '', notice: '' });
+  const newTask = (section?: string) => {
+    const current = useStore.getState();
+    const selected = current.tasks.find((task) => task.id === current.activeId);
+    if (selected && isProjectTask(selected) && current.workspace?.root !== selected.workspace) {
+      void current.selectWorkspace(selected.workspace).then((success) => {
+        if (success) newTask(section);
+      });
+      return;
+    }
+    useStore.setState({ activeId: null, draftSection: section ?? null, error: '', notice: '' });
     draft.clear('new');
     setFile(undefined);
     setHistory(false);
+    setTaskOptions(false);
     setIsolated(false);
     setMode('execute');
     setMaxSteps(30);
@@ -236,22 +291,18 @@ function App() {
       if (
         (event.metaKey || event.ctrlKey) &&
         event.key.toLowerCase() === 'n' &&
-        !settings &&
-        !appearance
+        !document.querySelector('dialog[open]')
       ) {
         event.preventDefault();
         newTask();
       }
       if (event.key === 'Escape') {
-        setSettings(false);
-        setAppearance(false);
-        setWorkspaceSettings(false);
         if (window.innerWidth <= 1180) setInspectorOpen(false);
       }
     };
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
-  }, [settings, appearance]);
+  }, [settings, appearance, taskOptions]);
   const fileRevision = visibleEvents
     .filter(
       (event) =>
@@ -295,6 +346,15 @@ function App() {
       await initializePreferences();
       await useStore.getState().refresh();
       useStore.setState({ configured: await api().agent.configured() });
+      const selectedWorkspace = await api().workspace.snapshot();
+      if (selectedWorkspace && !useStore.getState().workspace && !useStore.getState().opening)
+        useStore.setState({ workspace: selectedWorkspace });
+      const requested = new URLSearchParams(window.location.search).get('task');
+      const selected = useStore.getState().tasks.find((task) => task.id === requested);
+      if (selected) {
+        if (isProjectTask(selected)) await useStore.getState().selectWorkspace(selected.workspace);
+        useStore.setState({ activeId: selected.id });
+      }
     });
     return off;
   }, []);
@@ -385,37 +445,87 @@ function App() {
           }}
         />
         <div className="composer-bottom">
-          <AttachButton busy={importing || starting} pick={() => void draft.pick()} />
-          <Button variant="ghost" disabled={opening} onClick={() => void open()}>
-            <FolderOpen size={14} />
-            {opening
-              ? t('Opening…')
-              : (workspace?.name ??
-                (simulated ? t('Demo · no workspace needed') : t('Chat · optional workspace')))}
-          </Button>
-          <span className="spacer" />
-          <button
-            className="model-label"
-            aria-label={configured ? t('Model settings') : t('Configure model')}
-            onClick={() => setSettings(true)}
-          >
-            <Sparkles size={13} />
-            {simulated ? t('Demo mode · offline') : t('Model connected')}
-          </button>
-          <Button
-            aria-label={active ? t('Send follow-up') : t('Start task')}
-            disabled={
-              starting ||
-              importing ||
-              (!prompt.trim() && !attachments.length) ||
-              active?.status === 'interrupted'
-            }
-            onClick={send}
-          >
-            <ArrowUp size={16} />
-          </Button>
+          <div className="composer-context">
+            <AttachButton busy={importing || starting} pick={() => void draft.pick()} />
+            {currentSection && (
+              <span className="composer-section" title={currentSection}>
+                <List size={14} />
+                <span>{currentSection}</span>
+              </span>
+            )}
+            <ComposerProject
+              locked={!!active}
+              label={composerWorkspace}
+              title={active?.chat ? t('Conversation only') : (active?.workspace ?? workspace?.root)}
+              changed={() => {
+                setIsolated(false);
+                setFile(undefined);
+                setHistory(false);
+                requestAnimationFrame(() => promptRef.current?.focus());
+              }}
+            />
+          </div>
+          <div className="composer-actions">
+            <button
+              className="icon-button task-options-trigger"
+              aria-label={t('Task options')}
+              title={t('Task options')}
+              onClick={() => setTaskOptions(true)}
+            >
+              <SlidersHorizontal size={15} />
+              {mode === 'plan' && <span>{t('Plan')}</span>}
+            </button>
+            <button
+              className="model-label"
+              aria-label={configured ? t('Model settings') : t('Configure model')}
+              title={configured ? t('Model settings') : t('Configure model')}
+              onClick={() => setSettings(true)}
+            >
+              <Sparkles size={13} />
+              <span>{configured ? t('Model connected') : t('Demo mode · offline')}</span>
+            </button>
+            <Button
+              aria-label={active ? t('Send follow-up') : t('Start task')}
+              disabled={
+                starting ||
+                importing ||
+                (!prompt.trim() && !attachments.length) ||
+                active?.status === 'interrupted'
+              }
+              onClick={send}
+            >
+              <ArrowUp size={16} />
+            </Button>
+          </div>
         </div>
       </div>
+      {projectSettingsRoot && (
+        <div className="conversation-project-tools">
+          <button
+            className="conversation-project-settings"
+            title={projectSettingsRoot}
+            onClick={() =>
+              void perform(async () => {
+                const projects = await api().workspace.recent();
+                const project = projects.find(
+                  (item) =>
+                    item.root === projectSettingsRoot ||
+                    item.aliases?.includes(projectSettingsRoot),
+                );
+                setWorkspaceSettings(
+                  project ?? {
+                    root: projectSettingsRoot,
+                    name: composerWorkspace ?? projectSettingsRoot,
+                  },
+                );
+              })
+            }
+          >
+            <BrainCircuit size={14} />
+            <span>{t('Memory & extensions')}</span>
+          </button>
+        </div>
+      )}
       {importing && (
         <p role="status" className="attachment-feedback">
           {t('Preparing attachments…')}
@@ -428,67 +538,11 @@ function App() {
           ))}
         </div>
       )}
-      <p className="attachment-help">
-        {t('Attach, drop or paste · 6 files · 3 images · 10 MB per file')}
-      </p>
       {attachments.length > 0 && (
         <p className="attachment-help">
           {t('Attachments go to your connected model. Demo stays offline.')}
         </p>
       )}
-      <div className="run-controls">
-        <label>
-          {active ? t('Next mode') : t('Mode')}{' '}
-          <select
-            aria-label={t('Agent mode')}
-            value={mode}
-            onChange={(event) => {
-              setMode(event.target.value as 'plan' | 'execute');
-              if (event.target.value === 'plan') setIsolated(false);
-            }}
-          >
-            <option value="execute">{t('Execute')}</option>
-            <option value="plan">{t('Plan · read only')}</option>
-          </select>
-        </label>
-        <label>
-          {t('Max turns')}{' '}
-          <input
-            aria-label={t('Maximum model turns')}
-            type="number"
-            min={1}
-            max={100}
-            value={maxSteps}
-            onChange={(event) =>
-              setMaxSteps(Math.max(1, Math.min(100, Number(event.target.value) || 1)))
-            }
-          />
-        </label>
-        {mode === 'plan' && <span>{t('Reads and planning only')}</span>}
-      </div>
-      <RunSettings value={runSettings} onChange={setRunSettings} />
-      <div className="composer-hint">
-        {active ? (
-          <span>
-            {active.chat
-              ? t('Continue this conversation')
-              : t('Continue in the same {root}', {
-                  root: t(active.worktree ? 'worktree' : 'workspace'),
-                })}
-          </span>
-        ) : (
-          <label>
-            <input
-              type="checkbox"
-              disabled={mode === 'plan' || simulated || !workspace}
-              checked={isolated}
-              onChange={(event) => setIsolated(event.target.checked)}
-            />{' '}
-            {t('Isolate in a Git worktree')}
-          </label>
-        )}
-        <span>{t('↵ to send')}</span>
-      </div>
     </>
   );
   return (
@@ -498,40 +552,13 @@ function App() {
           <span className="brand-mark">
             <img src="./hikari-icon.svg" alt="" />
           </span>
-          hikari<span className="tag">{t('LOCAL')}</span>
+          hikari
         </div>
-        <Button
-          variant="outline"
-          disabled={opening}
-          onClick={() => void open()}
-          className="workspace-picker"
-        >
-          <FolderOpen size={16} />
-          <span>{opening ? t('Opening…') : (workspace?.name ?? t('Open workspace'))}</span>
-          <ChevronRight size={14} />
-        </Button>
-        <Button variant="ghost" className="new-task" onClick={newTask}>
+        <Button variant="ghost" className="new-task" onClick={() => newTask()}>
           <Plus size={17} />
           {t('New task')}
           <span>⌘ N</span>
         </Button>
-        <div className="nav-label">{t('WORKSPACE')}</div>
-        <button
-          className={`nav-item ${history ? 'active' : ''}`}
-          onClick={() => {
-            setHistory(true);
-            useStore.setState({ activeId: null });
-          }}
-        >
-          <Layers size={16} />
-          {t('Tasks')}
-          <span className="count">{tasks.length}</span>
-        </button>
-        <button className="nav-item" onClick={() => showPanel('files')}>
-          <Search size={16} />
-          {t('Repository')}
-        </button>
-        <div className="section-title">{t('RECENT TASKS')}</div>
         <input
           className="task-search"
           aria-label={t('Search tasks')}
@@ -539,79 +566,57 @@ function App() {
           value={taskSearch}
           onChange={(event) => setTaskSearch(event.target.value)}
         />
-        <div className="task-list">
-          {tasks.length === 0 ? (
-            <p className="sidebar-empty">
-              {t('Your work starts here.')}
-              <br />
-              {t('Try demo Q&A or open a repository.')}
-            </p>
-          ) : (
-            filteredTasks.map((task) => (
-              <button
-                className={`task-button ${activeId === task.id ? 'selected' : ''}`}
-                key={task.id}
-                onClick={() => {
-                  setHistory(false);
-                  useStore.setState({ activeId: task.id });
-                }}
-              >
-                <span>{task.title}</span>
-                <small>
-                  {task.demo ? `${t('Demo')} · ` : ''}
-                  {task.runOptions?.mode === 'plan' ? `${t('Plan')} · ` : ''}
-                  {t(`status.${task.status}`)}
-                </small>
-              </button>
-            ))
-          )}
-        </div>
-        <button className="appearance-entry" onClick={() => setWorkspaceSettings(true)}>
-          <Layers size={16} />
-          {t('Memory & extensions')}
-        </button>
-        <RecentWorkspaces />
-        <button
-          className="appearance-entry"
-          aria-label={t('Appearance & language')}
-          onClick={() => setAppearance(true)}
-        >
-          <Settings2 size={16} />
-          {t('Appearance & language')}
-        </button>
-        <button className="sidebar-bottom" onClick={() => setSettings(true)}>
-          <span className="status-dot" />
-          {configured ? t('Model connected') : t('Demo mode · model settings')}
-          <span className="spacer" />
-          <Settings2 size={16} />
-        </button>
+        <TaskNavigation
+          tasks={filteredTasks}
+          search={taskSearch}
+          create={newTask}
+          historyActive={history}
+          history={() => {
+            setHistory(true);
+            useStore.setState({ activeId: null });
+          }}
+          select={(task) => {
+            setHistory(false);
+            useStore.setState({ activeId: task.id });
+          }}
+        />
+        <SidebarSettings
+          model={() => setSettings(true)}
+          appearance={() => setAppearance(true)}
+          data={() => setDataSettings(true)}
+          sync={() => setSyncSettings(true)}
+        />
       </aside>
       <main>
         <header>
           <div className="breadcrumb">
-            {t('Workspace')}
+            {currentSection ?? t('Workspace')}
             <ChevronRight size={13} />
-            <span>{active?.title ?? t('New task')}</span>
+            <span title={active?.title ?? t('New task')}>{active?.title ?? t('New task')}</span>
           </div>
-          <span className="spacer" />
-          <span className="local-pill">
-            <span className="status-dot" />
-            {active?.status ?? t('On your machine')}
-          </span>
-          <Button
-            variant="ghost"
-            aria-label={t('Toggle right panel')}
-            aria-expanded={inspectorOpen}
-            onClick={() => setInspectorOpen((value) => !value)}
-          >
-            <PanelRight size={17} />
-          </Button>
+          <div className="header-actions">
+            {active && (
+              <span className="local-pill">
+                <span className="status-dot" />
+                <span>{t(`status.${active.status}`)}</span>
+              </span>
+            )}
+            <WorkspaceTools open={showPanel} />
+            <Button
+              variant="ghost"
+              aria-label={t('Toggle right panel')}
+              aria-expanded={inspectorOpen}
+              onClick={() => setInspectorOpen((value) => !value)}
+            >
+              <PanelRight size={17} />
+            </Button>
+          </div>
         </header>
         {history ? (
           <section className="task-view" aria-label={t('Task history')}>
             <div className="task-heading">
               <h2>{t('Task history')}</h2>
-              <Button onClick={newTask}>{t('New task')}</Button>
+              <Button onClick={() => newTask()}>{t('New task')}</Button>
               <Button
                 variant="outline"
                 onClick={() =>
@@ -662,7 +667,11 @@ function App() {
             )}
           </section>
         ) : active ? (
-          <section className="task-view" aria-label={t('Active task')} data-task-id={active.id}>
+          <section
+            className="task-view conversation-view"
+            aria-label={t('Active task')}
+            data-task-id={active.id}
+          >
             <div className="task-heading">
               <h2>
                 {active.title}
@@ -745,9 +754,18 @@ function App() {
             <div className="user-prompt">{active.prompt}</div>
             <AttachmentList key={active.id} files={active.attachments ?? []} />
             {active.chat && (
-              <p className="muted">
-                {t('Conversation only · open a workspace and start a new task for project tools.')}
-              </p>
+              <div className="workspace-handoff">
+                <p className="muted">
+                  {t(
+                    'Conversation only · open a workspace and start a new task for project tools.',
+                  )}
+                </p>
+                {workspace && (
+                  <Button variant="outline" onClick={() => newTask()}>
+                    {t('New task in {name}', { name: workspace.name })}
+                  </Button>
+                )}
+              </div>
             )}
             <UserInput task={active} />
             <TaskProgress
@@ -757,7 +775,9 @@ function App() {
               onExecutePlan={() => {
                 setMode('execute');
                 setPrompt(
-                  'Implement the plan from the previous turn. Inspect the current files first, preserve existing changes, run the relevant tests and report actual validation results.',
+                  t(
+                    'Implement the plan from the previous turn. Inspect the current files first, preserve existing changes, run the relevant tests and report actual validation results.',
+                  ),
                 );
               }}
             />
@@ -772,41 +792,29 @@ function App() {
         ) : (
           <section className="welcome">
             <div className="welcome-content">
-              <div className="eyebrow">
-                <span />
-                {t('YOUR IDEAS. IN MOTION.')}
-              </div>
-              <h1>
-                {t('A little direction.')}
-                <br />
-                <span>{t('A lot of possibility.')}</span>
-              </h1>
-              <p>
-                {t('From first thought to working code.')}
-                <br />
-                {t('Give your agent a workspace, and something worth building.')}
-              </p>
+              <h1>{t('What would you like to work on?')}</h1>
+              {composer}
               <div className="suggestions">
                 {[
                   [
                     FileCode2,
                     t('Understand a codebase'),
                     t('Map the architecture and find your way in.'),
-                    'Analyze this repository. Explain its architecture and key entry points.',
+                    t('Analyze this repository. Explain its architecture and key entry points.'),
                   ],
                   [
                     GitBranch,
                     t('Make a change'),
                     t('Turn an idea into a thoughtful implementation.'),
-                    'Inspect this repository and help me implement ',
+                    t('Inspect this repository and help me implement the following change:'),
                   ],
                   [
                     Terminal,
                     t('Find and fix an issue'),
                     t('Trace the problem. Test the solution.'),
-                    'Inspect this repository, run its tests, and fix the first failing test.',
+                    t('Inspect this repository, run its tests, and fix the first failing test.'),
                   ],
-                ].map(([Icon, title, description, suggestion]) => {
+                ].map(([Icon, title, , suggestion]) => {
                   const I = Icon as typeof FileCode2;
                   return (
                     <button
@@ -815,10 +823,10 @@ function App() {
                         setPrompt(
                           simulated
                             ? String(title) === t('Understand a codebase')
-                              ? '分析示例项目的架构，并给出计划。'
+                              ? t('Analyze the sample project architecture and propose a plan.')
                               : String(title) === t('Make a change')
-                                ? '修复示例购物车的金额计算，并演示 Diff。'
-                                : '修复示例测试，并说明模拟验证结果。'
+                                ? t('Fix the sample shopping cart calculation and show the diff.')
+                                : t('Fix the sample tests and explain the simulated results.')
                             : String(suggestion),
                         );
                         setMode(title === t('Understand a codebase') ? 'plan' : 'execute');
@@ -829,7 +837,7 @@ function App() {
                     >
                       <I size={19} />
                       <strong>{String(title)}</strong>
-                      <p>{String(description)}</p>
+
                       <ArrowUpRight size={15} />
                     </button>
                   );
@@ -842,7 +850,6 @@ function App() {
                   )}
                 </div>
               )}
-              {composer}
             </div>
           </section>
         )}
@@ -858,16 +865,6 @@ function App() {
             <button onClick={() => useStore.setState({ error: '' })}>{t('Dismiss')}</button>
           </div>
         )}
-        <footer>
-          <GitBranch size={12} />
-          {simulated
-            ? t('Offline simulation · no model required')
-            : workspace
-              ? t('Workspace connected')
-              : t('No repository connected')}
-          <span className="spacer" />
-          <span>HIKARI / 0.1.0</span>
-        </footer>
       </main>
       {inspectorOpen && (
         <button
@@ -878,21 +875,17 @@ function App() {
       )}
       <aside className="inspector" aria-label={t('Right panel')} aria-hidden={!inspectorOpen}>
         <div className="inspector-header">
-          {(['files', 'diff', 'terminal', 'browser', 'sync'] as const).map((name) => (
-            <button
-              key={name}
-              className={tab === name ? 'tab active-tab' : 'tab'}
-              onClick={() => setTab(name)}
-              title={t(name)}
-            >
-              {t(name)}
-            </button>
-          ))}
+          <strong>{t(tab)}</strong>
+          <button
+            className="icon-button"
+            aria-label={t('Close panel')}
+            onClick={() => setInspectorOpen(false)}
+          >
+            <X size={16} />
+          </button>
         </div>
         <div className="inspector-body">
-          {tab === 'sync' ? (
-            <SyncPanel />
-          ) : tab === 'browser' ? (
+          {tab === 'browser' ? (
             activeId ? (
               <BrowserPanel key={activeId} taskId={activeId} />
             ) : (
@@ -969,25 +962,38 @@ function App() {
             </>
           )}
         </div>
-        <div className="context-note">
-          <span className="status-dot" />
-          <div>
-            <strong>{t('Local by design')}</strong>
-            <p>
-              {simulated
-                ? t('Offline, deterministic examples.')
-                : t('Files and tools run locally.')}
-              <br />
-              {simulated
-                ? t('Demo uses only in-memory sample data.')
-                : t('Selected context goes to your model.')}
-            </p>
-          </div>
-        </div>
       </aside>
+      {taskOptions && (
+        <TaskOptions
+          close={() => setTaskOptions(false)}
+          mode={mode}
+          setMode={(value) => {
+            setMode(value);
+            if (value === 'plan') setIsolated(false);
+          }}
+          maxSteps={maxSteps}
+          setMaxSteps={setMaxSteps}
+          isolated={isolated}
+          setIsolated={setIsolated}
+          canIsolate={!active && mode !== 'plan' && !simulated && !!workspace}
+          followUp={!!active}
+          value={runSettings}
+          onChange={setRunSettings}
+        />
+      )}
       {appearance && <AppearanceSettings close={() => setAppearance(false)} />}
       {workspaceSettings && (
-        <WorkspaceSettings close={() => setWorkspaceSettings(false)} scope={active?.workspace} />
+        <WorkspaceSettings close={() => setWorkspaceSettings(null)} project={workspaceSettings} />
+      )}
+      {dataSettings && <WorkspaceSettings close={() => setDataSettings(false)} />}
+      {syncSettings && (
+        <Dialog
+          title={t('Account & sync')}
+          close={() => setSyncSettings(false)}
+          className="sync-dialog"
+        >
+          <SyncPanel />
+        </Dialog>
       )}
       {settings && <ModelSettings close={() => setSettings(false)} />}
     </div>

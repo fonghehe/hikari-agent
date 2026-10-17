@@ -28,7 +28,11 @@
     "docs:dev": "vitepress dev docs --host 127.0.0.1",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs --host 127.0.0.1",
-    "eval:agent": "tsx scripts/evals/run.ts"
+    "eval:agent": "node --import tsx scripts/evals/run.ts",
+    "eval:repository": "node --import tsx scripts/evals/repository.ts",
+    "eval:capabilities": "node --import tsx scripts/evals/capabilities.ts",
+    "vscode:pack": "node scripts/package-vscode.mjs",
+    "eval:report": "node --import tsx scripts/evals/report.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

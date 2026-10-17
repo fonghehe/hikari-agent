@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "name": "repair-a-pinned-defect",
+      "repository": "/absolute/path/to/your/local/repository",
+      "commit": "0000000000000000000000000000000000000000",
+      "prompt": "Reproduce the failing tests, repair the defect in src/sum.mjs, and rerun the tests. Preserve test/sum.test.mjs and package.json.",
+      "setup": [],
+      "grader": {
+        "command": "node",
+        "args": ["--test", "test/sum.test.mjs"],
+        "timeoutMs": 30000
+      },
+      "allowedPaths": ["src/sum.mjs"],
+      "preservePaths": ["test/sum.test.mjs", "package.json"]
+    }
+  ]
+}

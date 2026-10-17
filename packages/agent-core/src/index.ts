@@ -1,5 +1,7 @@
 import type { RunOptions, TaskPlan, RunSummary } from './task-controls';
+import { redactText, sensitiveField } from './data-policy';
 export * from './task-controls';
+export * from './extensions';
 import type { ZodType, ZodTypeDef } from 'zod';
 export const states = [
   'idle',
@@ -110,6 +112,7 @@ export interface Task {
   title: string;
   prompt: string;
   parentTaskId?: string;
+  delegated?: boolean;
   /** Explicitly simulated: no external model or host tools are used. */
   demo?: boolean;
   /** A model conversation without access to a local project. */
@@ -118,12 +121,19 @@ export interface Task {
   modelProfileId?: string;
   modelIdentity?: { provider: string; model: string; baseUrl?: string };
   archived?: boolean;
+  navigation?: { pinned?: boolean; unread?: boolean; section?: string };
   imported?: boolean;
   runOptions?: RunOptions;
   plan?: TaskPlan;
   runSummary?: RunSummary;
   pendingQuestion?: UserQuestion;
   resumable?: boolean;
+  goal?: {
+    objective: string;
+    status: 'active' | 'complete' | 'paused' | 'blocked';
+    continuations: number;
+    evidence?: string;
+  };
   status: AgentState;
   createdAt: string;
   updatedAt: string;
@@ -180,18 +190,15 @@ export class AgentError extends Error {
 export const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 export { searchTerms } from './search';
+export { sensitivePath, redactText, sanitizeMessage, sanitizeModelRequest } from './data-policy';
 export function redact(value: unknown): unknown {
-  if (typeof value === 'string')
-    return value
-      .replace(/("(?:api[_-]?key|password|token|secret)"\s*:\s*")[^"]*(")/gi, '$1[REDACTED]$2')
-      .replace(/\b(sk-[\w-]{8,}|Bearer\s+[\w.-]+)/gi, '[REDACTED]')
-      .replace(/((?:api[_-]?key|password|token|secret)\s*[=:]\s*)[^\s,;]+/gi, '$1[REDACTED]');
+  if (typeof value === 'string') return redactText(value);
   if (Array.isArray(value)) return value.map(redact);
   if (value && typeof value === 'object')
     return Object.fromEntries(
       Object.entries(value).map(([k, v]) => [
         k,
-        /secret|password|api.?key|authorization|^(access_?|refresh_?)?token$/i.test(k)
+        sensitiveField(k) && (typeof v === 'string' || typeof v === 'number')
           ? '[REDACTED]'
           : redact(v),
       ]),

@@ -4,6 +4,8 @@ A desktop workspace for AI conversations, project tasks and changes you can revi
 
 Connect hosted or local models, keep separate model profiles, and choose a development workflow with investigation, planning, implementation and independent review. Search attachments and saved memory with keywords or optional semantic retrieval. Review isolated worktree changes before delivering them to your project.
 
+Delegate focused tasks to isolated agents, configure approved lifecycle hooks and language servers, schedule recurring work, and resume persistent goals within a shared budget. The [automation and integration guide](docs/platform.md) covers plugins, conversation/code history, the VS Code extension, remote control, self-hosted execution workers and GitHub/CI review. Remote hosting and language servers require your own environment; see the guide for deployment and verification boundaries.
+
 ## User guide
 
 English is the default documentation language. The same operation guides are available in Chinese and Japanese.
@@ -13,6 +15,10 @@ English is the default documentation language. The same operation guides are ava
 - [日本語](https://fonghehe.github.io/hikari-agent/ja/)
 
 Start with [installation](docs/installation.md) and [your first task](docs/getting-started.md). Learn how to [ask with files and images](docs/attachments.md), [set acceptance checks, budgets and resume tasks](docs/run-controls.md), [manage memory and extensions](docs/extensions.md), [review changes](docs/usage.md), [connect a model](docs/configuration.md), [change theme and language](docs/appearance.md), or [resolve common problems](docs/troubleshooting.md).
+
+## Developer guide
+
+The [Electron architecture](docs/electron-architecture.md) explains process boundaries, IPC domains and task execution. See [development and verification](docs/development.md) for build and test commands, and [data, memory and retrieval](docs/memory-and-storage.md) for SQLite inspection, checkpoints and retrieval limits. These pages are also available in Chinese and Japanese through the documentation language menu.
 
 ## Open the app from source
 

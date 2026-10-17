@@ -1,0 +1,66 @@
+name: Hikari review
+description: Run a bounded read-only review and optionally publish it on the triggering issue or pull request.
+inputs:
+  api-key:
+    description: Model provider credential
+    required: true
+  model:
+    description: Model identifier
+    required: true
+  base-url:
+    description: Model provider base URL
+    required: true
+  provider:
+    description: Hikari provider identifier
+    default: compatible
+  prompt:
+    description: Review request
+    default: Review the current Git diff and report actionable findings with file evidence.
+  base-sha:
+    description: Fetched base commit used to construct the review diff
+    default: ${{ github.event.pull_request.base.sha }}
+  post-comment:
+    description: Explicitly publish the review on the triggering issue or PR
+    default: 'false'
+  github-token:
+    description: Scoped GitHub token required when post-comment is true
+    required: false
+outputs:
+  report:
+    description: Absolute path of the JSON review report
+    value: ${{ steps.review.outputs.report }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 11.16.0
+        run_install: false
+    - name: Install Hikari runtime
+      shell: bash
+      run: pnpm --dir "$GITHUB_ACTION_PATH/../.." install --frozen-lockfile --ignore-scripts
+    - name: Review
+      id: review
+      shell: bash
+      env:
+        AGENT_API_KEY: ${{ inputs.api-key }}
+        AGENT_MODEL: ${{ inputs.model }}
+        AGENT_BASE_URL: ${{ inputs.base-url }}
+        AGENT_PROVIDER: ${{ inputs.provider }}
+        AGENT_WORKSPACE: ${{ github.workspace }}
+        HIKARI_CI_OUTPUT: ${{ runner.temp }}/hikari-review.json
+        HIKARI_REVIEW_PROMPT: ${{ inputs.prompt }}
+        HIKARI_CI_BASE_SHA: ${{ inputs.base-sha }}
+      run: |
+        node --import "$GITHUB_ACTION_PATH/../../node_modules/tsx/dist/loader.mjs" "$GITHUB_ACTION_PATH/../../apps/cli/src/index.ts" ci "$HIKARI_REVIEW_PROMPT"
+        echo "report=$HIKARI_CI_OUTPUT" >> "$GITHUB_OUTPUT"
+    - name: Publish review
+      if: inputs.post-comment == 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        HIKARI_CI_OUTPUT: ${{ runner.temp }}/hikari-review.json
+      run: node "$GITHUB_ACTION_PATH/publish.mjs"

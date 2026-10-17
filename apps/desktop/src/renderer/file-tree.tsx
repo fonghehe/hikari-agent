@@ -47,12 +47,39 @@ export function buildFileTree(paths: string[]): FileNode[] {
   sort(root);
   return root;
 }
+const generatedFolders = new Set([
+  'node_modules',
+  '.pnpm-store',
+  '.pnpm',
+  '.turbo',
+  '.git',
+  '.cache',
+  'dist',
+  'build',
+  'coverage',
+  '.next',
+  '.nuxt',
+  '.output',
+  '.nitro',
+]);
+export function expandSourceLevel(nodes: FileNode[], expanded: Set<string>): Set<string> {
+  const next = new Set(expanded);
+  const visit = (items: FileNode[]) => {
+    for (const node of items) {
+      if (!node.children || generatedFolders.has(node.name)) continue;
+      if (expanded.has(node.path)) visit(node.children);
+      else next.add(node.path);
+    }
+  };
+  visit(nodes);
+  return next;
+}
 export function FileTree({ files, onOpen }: { files: string[]; onOpen(path: string): void }) {
   const { t } = useI18n();
   const tree = useMemo(() => buildFileTree(files), [files]);
-  const [collapsed, setCollapsed] = useState(new Set<string>());
+  const [expandedPaths, setExpanded] = useState(new Set<string>());
   const toggle = (path: string) =>
-    setCollapsed((previous) => {
+    setExpanded((previous) => {
       const next = new Set(previous);
       if (next.has(path)) next.delete(path);
       else next.add(path);
@@ -69,20 +96,20 @@ export function FileTree({ files, onOpen }: { files: string[]; onOpen(path: stri
     else if (event.key === 'ArrowUp') buttons[index - 1]?.focus();
     else if (event.key === 'Home') buttons[0]?.focus();
     else if (event.key === 'End') buttons.at(-1)?.focus();
-    else if (node.children && event.key === 'ArrowLeft' && !collapsed.has(node.path))
+    else if (node.children && event.key === 'ArrowLeft' && expandedPaths.has(node.path))
       toggle(node.path);
     else if (event.key === 'ArrowLeft') {
       const parent = node.path.slice(0, node.path.lastIndexOf('/'));
       buttons.find((button) => button.getAttribute('aria-label') === parent)?.focus();
     } else if (node.children && event.key === 'ArrowRight') {
-      if (collapsed.has(node.path)) toggle(node.path);
+      if (!expandedPaths.has(node.path)) toggle(node.path);
       else buttons[index + 1]?.focus();
     } else return;
     event.preventDefault();
   };
   const render = (nodes: FileNode[], depth: number) =>
     nodes.map((node) => {
-      const expanded = !collapsed.has(node.path);
+      const expanded = expandedPaths.has(node.path);
       const Icon = node.children
         ? expanded
           ? FolderOpen
@@ -121,23 +148,21 @@ export function FileTree({ files, onOpen }: { files: string[]; onOpen(path: stri
         </li>
       );
     });
-  const folders = (nodes: FileNode[]): string[] =>
-    nodes.flatMap((node) => (node.children ? [node.path, ...folders(node.children)] : []));
   return (
     <div className="file-tree">
       <div className="tree-tools">
         <span>{t('Explorer')}</span>
         <button
-          title={t('Expand all')}
-          aria-label={t('Expand all')}
-          onClick={() => setCollapsed(new Set())}
+          title={t('Expand source folders one level')}
+          aria-label={t('Expand one level')}
+          onClick={() => setExpanded((previous) => expandSourceLevel(tree, previous))}
         >
-          {t('Expand')}
+          {t('Expand one level')}
         </button>
         <button
           title={t('Collapse all')}
           aria-label={t('Collapse all')}
-          onClick={() => setCollapsed(new Set(folders(tree)))}
+          onClick={() => setExpanded(new Set())}
         >
           <ChevronsDownUp size={14} />
         </button>

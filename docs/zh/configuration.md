@@ -2,7 +2,7 @@
 
 ## 连接服务
 
-打开侧栏底部的 **模型设置**，选择服务商，填写账号可用的模型 ID 和所需密钥，再点击 **连接模型**。普通问答与附件分析无需工作区；开发任务需要打开工作区。
+打开侧栏底部的 **设置 → 模型设置**，选择服务商，填写账号可用的模型 ID 和所需密钥，再点击 **连接模型**。普通问答与附件分析无需工作区；开发任务需要打开工作区。
 
 预设支持 OpenAI、Azure OpenAI / Foundry、Anthropic、Google Gemini、DeepSeek、Qwen、Kimi、GLM、豆包、MiniMax、SiliconFlow、Groq、Grok、Mistral、OpenRouter、Ollama 和 LM Studio。其他 Chat Completions 服务选择 **OpenAI compatible**。预设地址可按账号所在区域或自建网关修改。
 

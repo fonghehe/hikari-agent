@@ -64,6 +64,7 @@ const guides = [
     nextPrefix: '/zh',
     nextLang: 'zh-CN',
     nextHeading: '外观与语言',
+    architecture: 'Electron architecture',
   },
   {
     prefix: '/zh',
@@ -80,6 +81,7 @@ const guides = [
     nextPrefix: '/ja',
     nextLang: 'ja',
     nextHeading: '外観と言語',
+    architecture: 'Electron 架构',
   },
   {
     prefix: '/ja',
@@ -96,6 +98,7 @@ const guides = [
     nextPrefix: '',
     nextLang: 'en-US',
     nextHeading: 'Appearance and language',
+    architecture: 'Electron アーキテクチャ',
   },
 ];
 
@@ -116,6 +119,10 @@ for (const guide of guides) {
       'extensions',
       'cli',
       'troubleshooting',
+      'run-controls',
+      'electron-architecture',
+      'development',
+      'memory-and-storage',
     ]) {
       const response = await request.get(
         `${url}${guide.prefix}/${route === 'index' ? '' : route + '.html'}`,
@@ -124,7 +131,7 @@ for (const guide of guides) {
       const html = await response.text();
       expect(html).toContain(`lang="${guide.lang}"`);
       expect(html).not.toMatch(
-        /forge|product-requirements|href="[^"]*(?:architecture|development|progress|backend|packaging)\.html/i,
+        /product-requirements|href="[^"]*\/(?:progress|backend|packaging)\.html/i,
       );
     }
     await page.goto(`${url}${guide.prefix}/`);
@@ -177,6 +184,20 @@ for (const guide of guides) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
+    await page.goto(`${url}${guide.prefix}/platform.html`);
+    await expect(page.locator('.vp-doc h1')).toHaveCount(1);
+    expect(await page.locator('.vp-doc h2').count()).toBeGreaterThanOrEqual(12);
+    for (const capability of [
+      'spawn_agent',
+      'lsp_diagnostics',
+      'HIKARI_WORKER_TOKEN',
+      'timeline restore',
+      'AGENT_GOAL',
+    ])
+      await expect(page.locator('.vp-doc')).toContainText(capability);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
     await page.screenshot({
       path: `test-results/hikari-docs-mobile-${guide.lang}.png`,
       fullPage: true,
@@ -194,5 +215,24 @@ for (const guide of guides) {
     await expect(
       page.getByRole('heading', { name: new RegExp(`^${guide.nextHeading}`) }),
     ).toBeVisible();
+
+    await page.goto(`${url}${guide.prefix}/electron-architecture.html`);
+    await expect(
+      page.getByRole('heading', { name: new RegExp(`^${guide.architecture}`) }),
+    ).toBeVisible();
+    await expect(page.locator('.VPSidebarItem.is-active')).toContainText(guide.architecture);
+    await expect(page.locator('.vp-doc')).toContainText('ipc/router.ts');
+    await page.screenshot({ path: `test-results/hikari-docs-architecture-${guide.lang}.png` });
+    await page.getByRole('button', { name: guide.languageMenu, exact: true }).hover();
+    await page
+      .locator('.VPNavBarTranslations')
+      .getByRole('link', { name: guide.nextLabel, exact: true })
+      .click();
+    await expect(page).toHaveURL(`${url}${guide.nextPrefix}/electron-architecture.html`);
+    await expect(page.locator('html')).toHaveAttribute('lang', guide.nextLang);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
   });
 }

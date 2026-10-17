@@ -21,7 +21,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @hikari/desktop exec playwright install --with-deps chromium
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap ripgrep apparmor
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap ripgrep apparmor xvfb
       - name: Allow bubblewrap user namespaces on Ubuntu
         if: runner.os == 'Linux'
         run: |
@@ -34,7 +34,22 @@ jobs:
         run: if (!(Get-Command rg -ErrorAction SilentlyContinue)) { choco install ripgrep --yes --no-progress }
       - run: rg --version
       - run: pnpm check
+      - run: pnpm format:check
       - run: pnpm docs:build
+      - run: pnpm --filter @hikari/desktop build
+      - name: Verify desktop and documentation before publication
+        if: runner.os != 'Linux'
+        run: pnpm exec playwright test
+      - name: Verify desktop and documentation under Xvfb
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm exec playwright test
+      - run: pnpm desktop:pack
+      - name: Verify packaged desktop before publication
+        if: runner.os != 'Linux'
+        run: pnpm test:package
+      - name: Verify packaged desktop under Xvfb before publication
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm test:package
       - run: node scripts/release-desktop.mjs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

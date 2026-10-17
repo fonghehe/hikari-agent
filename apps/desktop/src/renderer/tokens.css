@@ -1,0 +1,57 @@
+/* Shared desktop geometry. Component exceptions belong with their layout. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --font-caption: 12px;
+  --font-body: 13px;
+  --font-heading: 18px;
+  --font-weight-body: 400;
+  --font-weight-heading: 500;
+  --control-height: 32px;
+  --control-compact: 28px;
+  --radius-small: 6px;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --field-default-width: 320px;
+  --field-short-width: 128px;
+  --field-wide-width: 440px;
+  --motion-feedback: 120ms;
+  --accent: #8b9eff;
+  --accent-soft: #202941;
+  --accent-ink: #131c39;
+  --panel-bg: #151820;
+  --canvas-bg: #10131a;
+  --text-primary: #e8ebf4;
+  --text-secondary: #a4adbf;
+  --border: #2c3240;
+  --field-bg: #10151f;
+  --field-border: #5c6c87;
+  --danger: #ff9a9a;
+  --scroll-thumb: #454e63;
+  --scroll-hover: #737f99;
+  --shadow-dialog: 0 20px 64px #0005;
+  --shadow-menu: 0 8px 28px #0003, 0 2px 6px #0001;
+}
+:root[data-theme='light'] {
+  --accent: #435bc6;
+  --accent-soft: #edf0ff;
+  --accent-ink: #ffffff;
+  --panel-bg: #f3f5fa;
+  --canvas-bg: #fbfcff;
+  --text-primary: #20283b;
+  --text-secondary: #586680;
+  --border: #d8deeb;
+  --field-bg: #ffffff;
+  --field-border: #7c8ba6;
+  --danger: #b52d3c;
+  --scroll-thumb: #bbc4d6;
+  --scroll-hover: #8b98b1;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-feedback: 0s;
+  }
+}

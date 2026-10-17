@@ -45,7 +45,8 @@
     "tesseract.js": "^7.0.0",
     "unpdf": "^1.8.1",
     "zod": "^3.25.0",
-    "zustand": "^5.0.0"
+    "zustand": "^5.0.0",
+    "@hikari/agent-host": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",

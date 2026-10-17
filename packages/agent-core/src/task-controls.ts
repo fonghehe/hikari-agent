@@ -42,6 +42,12 @@ export const runOptionsSchema = z.object({
   maxDurationMs: z.number().int().min(1000).max(86400000).optional(),
   execution: z.enum(['restricted', 'host']).optional(),
   allowNetwork: z.boolean().optional(),
+  goal: z
+    .object({
+      objective: z.string().trim().min(1).max(4000),
+      maxContinuations: z.number().int().min(1).max(20).default(5),
+    })
+    .optional(),
 });
 export type RunOptions = z.infer<typeof runOptionsSchema>;
 export const taskPlanSchema = z
@@ -108,6 +114,7 @@ export const planningTools: ReadonlySet<string> = new Set([
   'repository_map',
   'project_instructions',
   'read_file',
+  'read_tool_result',
   'list_directory',
   'glob',
   'grep',
@@ -125,6 +132,8 @@ export const planningTools: ReadonlySet<string> = new Set([
   'search_memory',
   'search_attachments',
   'read_attachment',
+  'update_goal',
+  'send_agent_message',
 ]);
 
 export const modeInstruction = (mode: RunOptions['mode']) =>

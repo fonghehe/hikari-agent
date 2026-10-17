@@ -1,3 +1,4 @@
+import { addWorkspaceProject } from './desktop-window';
 import { test, expect, _electron as electron } from '@playwright/test';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
@@ -128,7 +129,7 @@ test('desktop runs the development graph through real tools and verification, th
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [root] });
     }, root);
     const page = await app.firstWindow();
-    await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
+    await addWorkspaceProject(page);
     const id = await page.evaluate(
       async ({ endpoint, node, execution }) => {
         const api = window.hikari!;

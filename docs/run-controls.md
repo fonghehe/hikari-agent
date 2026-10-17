@@ -2,7 +2,7 @@
 
 ## Define completion
 
-Open **Acceptance and budgets** under the task input. Add a **file check** (path, expected existence, optional required text) or a **test command** (executable, one argument per line, working directory). Use commands you trust: acceptance tests still require permission.
+Open **Task options → Acceptance and budgets** beside the task input. Add a **file check** (path, expected existence, optional required text) or a **test command** (executable, one argument per line, working directory). Use commands you trust: acceptance tests still require permission.
 
 The agent cannot mark an Execute task complete while a configured check fails. File changes require a passing test after the last change by default. Select **Use acceptance checks only** for tasks where tests do not apply, such as document edits. A Plan describes proposed work and does not execute acceptance commands.
 
@@ -20,6 +20,8 @@ Unfinished real tasks with valid saved state appear as **Interrupted**. Connect 
 
 When an operation stopped before its outcome was recorded, Hikari asks whether to inspect and continue. Check files or the external service before repeating that operation: it may already have taken effect. A missing or invalid saved state requires Retry instead. Cancellation does not undo changes.
 
+Long tool results include a preview of the beginning and end. The agent can read pages of the saved result without running the operation again. These results stay local to the task, survive Resume, and are omitted from conversation exports and sync. Deleting the task removes its saved results.
+
 ## Limit usage
 
 Set a token, USD or time limit before sending. Leave a field empty for no additional limit. Limits carry over when resuming; Resume does not reset the budget. Time limits include waiting for input and permissions.
@@ -36,11 +38,11 @@ Choose **Host access** only when the task needs a toolchain the sandbox cannot p
 
 ## Memory, web and updates
 
-Ask the agent to remember a useful project fact or decision. Open **Memory & extensions** to review and forget entries. Project memories are local reference data; they do not override your request.
+Ask the agent to remember a useful project fact or decision. Open **Project chats → Memory & extensions** to review and forget entries. Project memories are local reference data; they do not override your request.
 
 Web pages can be read in a normal conversation with approval. To search, configure the URL of your SearXNG `/search` service with JSON results enabled in Model settings. Search questions go to that service; source pages are read through the browser. Missing or failed services are reported rather than replaced with invented search results.
 
-**Memory & extensions → Application updates** offers Check, Download and Restart separately. Updates require a packaged release with an update feed. Finish active tasks before installing. Local builds without a feed display that limitation.
+**Settings → Data & updates → Application updates** offers Check, Download and Restart separately. Updates require a packaged release with an update feed. Finish active tasks before installing. Local builds without a feed display that limitation.
 
 ## Development workflow
 
@@ -64,6 +66,10 @@ Imports carry the prompt and previous answer as reference data. They do not rest
 
 ## Review memory and permissions
 
-In **Memory & extensions**, edit a saved memory's title, content, source or expiry date, or forget it. Expired entries remain visible for review but are excluded from retrieval. The agent can maintain a structured task summary containing goals, constraints, decisions, open items and evidence for long tasks.
+In **Project chats → Memory & extensions**, edit a saved memory's title, content, source or expiry date, or forget it. Expired entries remain visible for review but are excluded from retrieval. The agent can maintain a structured task summary containing goals, constraints, decisions, open items and evidence for long tasks.
 
 **Persistent permissions** lists saved approvals. **Revoke** removes a saved approval and clears session grants. An already running operation may finish; new requests require approval again.
+
+## Goals, schedules and history
+
+Persistent goals retain the original resource budget; history can restore code, conversation or both after conflict checks. Scheduled work and remote control use the same execution permissions. See the [platform guide](platform.md) for controls and recovery limits.

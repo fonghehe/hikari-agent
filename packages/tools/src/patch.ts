@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
 import { applyPatch, parsePatch, createTwoFilesPatch } from 'diff';
-import { AgentError, type EventSink } from '@hikari/agent-core';
+import { AgentError, sensitivePath, type EventSink } from '@hikari/agent-core';
 import { LogicalSandboxProvider } from '@hikari/sandbox';
 export const contentHash = (text: string) => createHash('sha256').update(text).digest('hex');
 export type FileAction = 'create' | 'modify' | 'delete' | 'rename';
@@ -98,7 +98,8 @@ export class FileChangeService {
             '.cache',
             '__pycache__',
           ].includes(entry.name) ||
-          entry.isSymbolicLink()
+          entry.isSymbolicLink() ||
+          sensitivePath(path.join(relative, entry.name))
         )
           continue;
         const filename = path.join(directory, entry.name),

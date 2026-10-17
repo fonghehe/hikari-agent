@@ -12,7 +12,10 @@ export class BrowserService {
   private screenshotData?: string;
   private lastURL = '';
   private generation = 0;
-  constructor(private events: EventSink) {}
+  constructor(
+    private events: EventSink,
+    private channel?: 'chrome' | 'msedge',
+  ) {}
   private async getPage() {
     if (this.page && !this.page.isClosed()) return this.page;
     const generation = this.generation;
@@ -30,7 +33,11 @@ export class BrowserService {
         throw new Error('Invalid bundled browser manifest');
       executablePath = candidate;
     }
-    const browser = await chromium.launch({ headless: true, executablePath });
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath,
+      channel: executablePath ? undefined : this.channel,
+    });
     if (generation !== this.generation) {
       await browser.close();
       throw new Error('Browser operation cancelled');
@@ -86,7 +93,7 @@ export class BrowserService {
   }
   async evaluate(expression: string) {
     const result: unknown = await (await this.getPage()).evaluate(expression);
-    return JSON.stringify(result)?.slice(0, 24000) ?? 'undefined';
+    return JSON.stringify(result) ?? 'undefined';
   }
   async screenshot() {
     const bytes = await (
@@ -97,10 +104,10 @@ export class BrowserService {
     return 'Screenshot captured. Available in the Browser preview panel.';
   }
   async getDOM() {
-    return (await (await this.getPage()).locator('body').innerText()).slice(0, 24000);
+    return await (await this.getPage()).locator('body').innerText();
   }
   async getAccessibilityTree() {
-    return (await (await this.getPage()).locator('body').ariaSnapshot()).slice(0, 24000);
+    return await (await this.getPage()).locator('body').ariaSnapshot();
   }
   preview() {
     return { url: this.page?.url() ?? this.lastURL, image: this.screenshotData };

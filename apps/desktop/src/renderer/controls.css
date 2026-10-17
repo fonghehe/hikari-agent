@@ -1,0 +1,236 @@
+/* Native desktop controls: one geometry, explicit widths, shared state colors. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transition:
+    background-color var(--motion-feedback),
+    border-color var(--motion-feedback);
+}
+.button-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.button-outline {
+  background: transparent;
+  border-color: var(--field-border);
+  color: var(--text-primary);
+}
+.button-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.button-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text-primary));
+}
+:is(.button-outline, .button-ghost):hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+button:active:not(:disabled),
+summary:active {
+  background-color: var(--accent-soft);
+}
+.button-primary:active:not(:disabled) {
+  background: var(--accent);
+}
+:where(button, summary, input, select, textarea) {
+  scroll-margin-block: var(--space-2);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+:is(.app-dialog, .sync-panel, .run-settings, .user-question)
+  :where(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--control-height);
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-control);
+  background: var(--field-bg);
+  color: var(--text-primary);
+  font: inherit;
+  line-height: 18px;
+  transition: border-color var(--motion-feedback);
+}
+input:where(:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color'])) {
+  width: min(var(--control-width, var(--field-default-width)), 100%);
+  min-width: 0;
+}
+input[type='number'] {
+  --control-width: var(--field-short-width);
+}
+input[type='datetime-local'] {
+  --control-width: 224px;
+}
+input[type='url'],
+input[type='email'],
+input[type='password'],
+.field-wide > input {
+  --control-width: var(--field-wide-width);
+}
+select {
+  width: fit-content;
+  min-width: min(160px, 100%);
+  max-width: min(360px, 100%);
+  flex: 0 1 auto;
+}
+:is(.app-dialog, .sync-panel, .run-settings) select {
+  /* Reserve the native disclosure arrow even for long translated options. */
+  padding-inline-end: 28px;
+}
+:is(.app-dialog, .run-settings) textarea {
+  width: min(520px, 100%);
+  min-height: 88px;
+  max-height: 280px;
+  resize: vertical;
+  line-height: 1.65;
+}
+:is(.app-dialog, .sync-panel, .run-settings, .user-question)
+  :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+:is(input, textarea)::placeholder {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+.modal {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-dialog);
+}
+.modal p {
+  font-size: var(--font-caption);
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+.modal label {
+  font-size: var(--font-caption);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.composer {
+  position: relative;
+  container-type: inline-size;
+  overflow: hidden;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-panel);
+  background: var(--panel-bg);
+  transition:
+    border-color var(--motion-feedback),
+    box-shadow var(--motion-feedback);
+}
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.composer textarea {
+  display: block;
+  width: 100%;
+  height: 88px;
+  min-height: 88px;
+  max-height: 200px;
+  resize: vertical;
+  padding: 14px 16px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  line-height: 1.65;
+}
+.follow-up-composer .composer textarea {
+  height: 64px;
+  min-height: 64px;
+}
+.composer-actions > button,
+.composer-context > button {
+  flex-shrink: 0;
+  height: 36px;
+  min-height: 36px;
+}
+.project-context-menu,
+.project-section-menu {
+  width: max-content;
+  min-width: 0;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--canvas-bg);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-menu);
+  z-index: 1000;
+}
+.project-context-menu {
+  position: fixed;
+  max-height: calc(100dvh - 16px);
+  overflow: visible;
+}
+.context-menu-items {
+  max-height: calc(100dvh - 26px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 4px;
+}
+.project-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-compact);
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: inherit;
+  font-size: var(--font-caption);
+  line-height: 20px;
+  text-align: left;
+}
+.project-context-menu button > span {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.project-context-menu button > svg {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+}
+.project-context-menu button:hover:not(:disabled),
+.project-context-menu button:focus-visible {
+  background: var(--accent-soft);
+}
+.project-context-menu button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.project-context-menu [role='separator'] {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}

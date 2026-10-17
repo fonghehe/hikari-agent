@@ -5,6 +5,8 @@ const base = process.env.DOCS_BASE_PATH || '/';
 type Labels = {
   guide: string;
   pages: string[];
+  developer: string;
+  developerPages: string[];
   language: string;
   outline: string;
   previous: string;
@@ -27,6 +29,7 @@ const routes = [
   'cli',
   'troubleshooting',
   'run-controls',
+  'platform',
 ];
 function guide(prefix: string, labels: Labels): DefaultTheme.Config {
   return {
@@ -34,6 +37,7 @@ function guide(prefix: string, labels: Labels): DefaultTheme.Config {
       { text: labels.pages[0]!, link: `${prefix}/getting-started` },
       { text: labels.pages[2]!, link: `${prefix}/usage` },
       { text: labels.pages[8]!, link: `${prefix}/troubleshooting` },
+      { text: labels.developer, link: `${prefix}/electron-architecture` },
     ],
     sidebar: [
       {
@@ -42,6 +46,15 @@ function guide(prefix: string, labels: Labels): DefaultTheme.Config {
           text: labels.pages[index]!,
           link: `${prefix}/${route}`,
         })),
+      },
+      {
+        text: labels.developer,
+        items: ['electron-architecture', 'development', 'memory-and-storage'].map(
+          (route, index) => ({
+            text: labels.developerPages[index]!,
+            link: `${prefix}/${route}`,
+          }),
+        ),
       },
     ],
     langMenuLabel: labels.language,
@@ -69,6 +82,12 @@ export default defineConfig({
       link: '/',
       themeConfig: guide('', {
         guide: 'User guide',
+        developer: 'Developer guide',
+        developerPages: [
+          'Electron architecture',
+          'Development and verification',
+          'Data, memory and retrieval',
+        ],
         pages: [
           'Getting started',
           'Installation',
@@ -80,6 +99,7 @@ export default defineConfig({
           'Command-line usage',
           'Troubleshooting',
           'Run, verify and resume',
+          'Automation and integrations',
         ],
         language: 'Change language',
         outline: 'On this page',
@@ -100,6 +120,8 @@ export default defineConfig({
       description: 'Hikari 操作手册：对话、项目任务与修改审阅。',
       themeConfig: guide('/zh', {
         guide: '操作手册',
+        developer: '开发者指南',
+        developerPages: ['Electron 架构', '开发与验证', '数据、记忆与检索'],
         pages: [
           '快速开始',
           '安装',
@@ -111,6 +133,7 @@ export default defineConfig({
           '命令行使用',
           '常见问题',
           '执行、验收与恢复',
+          '自动化与开发集成',
         ],
         language: '切换语言',
         outline: '本页目录',
@@ -131,6 +154,8 @@ export default defineConfig({
       description: 'Hikari の操作ガイド：会話、プロジェクトのタスク、変更のレビュー。',
       themeConfig: guide('/ja', {
         guide: '操作ガイド',
+        developer: '開発者ガイド',
+        developerPages: ['Electron アーキテクチャ', '開発と検証', 'データ・記憶・検索'],
         pages: [
           'はじめに',
           'インストール',
@@ -142,6 +167,7 @@ export default defineConfig({
           'コマンドラインの使い方',
           '困ったとき',
           '実行・検証・再開',
+          '自動実行と開発環境との連携',
         ],
         language: '言語を変更',
         outline: 'このページの内容',

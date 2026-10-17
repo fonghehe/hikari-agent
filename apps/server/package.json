@@ -13,7 +13,13 @@
     "ioredis": "^5.8.0",
     "zod": "^3.25.0",
     "pg": "^8.16.0",
-    "drizzle-orm": "^0.44.0"
+    "drizzle-orm": "^0.44.0",
+    "@hikari/agent-host": "workspace:*",
+    "@hikari/agent-runtime": "workspace:*",
+    "@hikari/model-provider": "workspace:*",
+    "@hikari/sandbox": "workspace:*",
+    "@hikari/shared": "workspace:*",
+    "@hikari/tools": "workspace:*"
   },
   "scripts": {
     "dev": "tsx src/index.ts",

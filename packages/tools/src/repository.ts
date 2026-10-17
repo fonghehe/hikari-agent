@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readFile, stat, realpath } from 'node:fs/promises';
 import { LogicalSandboxProvider } from '@hikari/sandbox';
-import { searchTerms } from '@hikari/agent-core';
+import { searchTerms, redactText } from '@hikari/agent-core';
 const sandbox = new LogicalSandboxProvider();
 export async function projectInstructions(root: string, file = '.') {
   root = await realpath(root);
@@ -25,7 +25,7 @@ export async function projectInstructions(root: string, file = '.') {
           });
           continue;
         }
-        const text = await readFile(filename, 'utf8');
+        const text = redactText(await readFile(filename, 'utf8'));
         rules.push({ path: relative, text: text.slice(0, 6000), truncated: text.length > 6000 });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;

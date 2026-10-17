@@ -2,6 +2,7 @@ import { workflowSchema, type WorkflowState } from './workflow';
 import { z } from 'zod';
 import { runSummarySchema } from '@hikari/agent-core';
 import type { Message, ModelUsage, RunSummary, ToolCall } from '@hikari/agent-core';
+import type { ToolOutputStore } from './observations';
 export interface RunnerCheckpoint {
   version: 1;
   messages: Message[];
@@ -11,14 +12,16 @@ export interface RunnerCheckpoint {
   testedRevision: Record<string, number>;
   pending: { call: ToolCall; state: 'ready' | 'running' | 'done' }[];
   queued: string[];
+  runtimeChecks?: boolean;
   restrictions?: string[];
   answeredQuestion?: { id: string; answer: string; toolCallId?: string };
   needsVerification?: boolean;
   workflow?: WorkflowState;
   updatedAt: string;
   done: boolean;
+  goal?: import('@hikari/agent-core').Task['goal'];
 }
-export interface CheckpointStore {
+export interface CheckpointStore extends Partial<ToolOutputStore> {
   load(id: string): RunnerCheckpoint | undefined;
   save(id: string, checkpoint: RunnerCheckpoint): void;
 }
@@ -68,6 +71,7 @@ const checkpointSchema = z.object({
     )
     .max(20),
   queued: z.array(z.string().max(12000)).max(20),
+  runtimeChecks: z.boolean().optional(),
   restrictions: z.array(z.string()).optional(),
   answeredQuestion: z
     .object({ id: z.string(), answer: z.string().max(12000), toolCallId: z.string().optional() })
@@ -76,6 +80,14 @@ const checkpointSchema = z.object({
   workflow: workflowSchema.optional(),
   updatedAt: z.string(),
   done: z.boolean(),
+  goal: z
+    .object({
+      objective: z.string(),
+      status: z.enum(['active', 'complete', 'paused', 'blocked']),
+      continuations: z.number().int().nonnegative(),
+      evidence: z.string().optional(),
+    })
+    .optional(),
 });
 export function parseCheckpoint(value: unknown): RunnerCheckpoint | undefined {
   const result = checkpointSchema.safeParse(value);

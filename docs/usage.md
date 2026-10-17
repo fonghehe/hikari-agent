@@ -4,11 +4,27 @@
 
 Click **New task** or press **⌘N / Ctrl+N** to start a fresh conversation. Enter a goal and send it with **Enter**; **Shift+Enter** inserts a new line. Cancelling the folder picker preserves your draft.
 
-Choose **Tasks** to browse history. Search by task title or workspace and select a task to see its conversation and results. Your history remains available after restarting Hikari; interrupted tasks are not resumed automatically.
+Use **Task history** beside **Recent** to browse history. Search by task title or workspace and select a task to see its conversation and results. Your history remains available after restarting Hikari; interrupted tasks are not resumed automatically.
+
+Projects appear above **Recent**, with their conversations nested beneath them. Click a project to expand or collapse its chats; use its compose icon to start a new chat. The **+** button opens **Create project**: enter a name, add a source folder, and confirm creation. Choosing a folder only stages its path; cancelling leaves projects and the active workspace intact. The source menu also offers a file picker and manual absolute paths. A file imports its containing folder. Paths and filesystem aliases that resolve to the same folder share one project. Different folders with the same name remain separate and show their distinguishing parent paths.
+
+Use **… → Organize sidebar** to switch between **By project** and **Combined view**. Combined view lists regular project and standalone chats together while retaining pinned items and custom sections. **Chat sort order** offers **Recently updated** and **Manual order**. Drag chats or focus one and press **Alt + Up/Down** to reorder manually. Display choices and manual positions are saved on this device; new chats appear first. In combined view, **Task history** appears below the chat list.
+
+Right-click a project, or focus it and press **Shift+F10**, to open **Pin project**, **Edit**, **Section**, **Archive chats**, and **Remove project**. Pinning and sections persist across restarts. Archiving affects only finished conversations in that project; active tasks must finish or be cancelled first. Removal hides the project and its sidebar conversations while preserving files and all records in **Task history**. Add the same folder or one of its files again to restore the association and the saved name. **New chat** beside **Recent** starts a conversation without project access. Follow-ups retain their original project after switching projects.
+
+Project removal requires confirmation in both the context menu and the editor. **Cancel** is focused by default; no files or records are deleted.
+
+Right-click any sidebar conversation to rename, pin, mark unread, move to a section, fork, share, copy, open in a new window, choose an external opener, archive, or permanently delete it. Forks copy saved conversation content without starting the model or resuming execution. A Git project conversation can also fork into a new worktree from its current working files; an existing isolated worktree can fork a conversation in the same worktree. Sharing offers copied Markdown or a local export, without uploading content or creating a public link. Permanent deletion requires confirmation; isolated worktrees must be archived first.
+
+Custom sections appear above pinned items, projects and recent chats. Click the section heading to expand or collapse it; the collapsed state is remembered on this device. The compose icon opens a new conversation in that section. New conversations, follow-ups and retries retain their section. Search temporarily reveals matching section content.
+
+The **…** button or context menu on a custom section offers **Edit**, **Mark all as read**, **Archive chats**, **New section…**, and **Remove section**. Empty sections persist. Removing a section returns its projects and conversations to their default groups while retaining history and files. Section archives include nested project chats; active tasks must finish or be cancelled first.
+
+**Project chats → Memory & extensions** opens that project’s fixed-height window with **Memory**, **Extensions**, and **Automation and integrations** tabs. Its entry is below the input box in a project conversation, including a new conversation in that project. Global data maintenance and updates are in **Settings → Data & updates**. Tab content scrolls internally so switching tabs keeps the window in place.
 
 ## Plan and execute
 
-Choose the mode before sending a task:
+Open **Task options** beside the composer to choose the mode, turn limit and worktree option. Expand **Acceptance and budgets** for additional controls:
 
 | Mode        | Use it for                                                                                                |
 | ----------- | --------------------------------------------------------------------------------------------------------- |
@@ -25,7 +41,7 @@ After reviewing a plan, click **Use plan in Execute**, edit the prepared prompt 
 - **Resume** continues a paused task or a recoverable interrupted task.
 - **Cancel** stops the current run. Changes already made are not automatically undone; review them in **Diff**.
 - **Retry** starts another run with the same request. Check the failure message and current files first.
-- **Follow-up prompt** continues a finished, failed or cancelled task. Select **Next mode** for the new turn. **Previous turn** returns to the earlier conversation.
+- **Follow-up prompt** continues a finished, failed or cancelled task. Choose the next mode in **Task options** beside the follow-up input. **Previous turn** returns to the earlier conversation.
 
 ## Approve an operation
 
@@ -33,7 +49,7 @@ Read the tool name, arguments and target workspace before choosing **Allow once*
 
 ## Read files and review changes
 
-**Files** shows a directory tree for the selected task. Expand folders, click a file to read it, or use **Expand all / Collapse all**. The file viewer is read-only.
+Open **Workspace tools → Files** for the selected task. Folders start collapsed. Click a folder to expand it or use **Expand one level** to reveal another source level; dependency and generated folders are skipped by that action. **Collapse all** folds the tree. Click a file to read it in the read-only viewer.
 
 Pause the task and wait for it to become paused, or let it finish, before reviewing **Diff**:
 
@@ -61,7 +77,7 @@ For browser work, connect a real model and ask it to open a page, inspect it or 
 
 ## Optional account and sync
 
-In **Sync**, enter your server URL, email and password. Use **Create an account** when registering, then sign in.
+Open the **Settings → Account & sync** dialog and enter your server URL, email and password. Use **Create an account** when registering, then sign in.
 
 - **Upload selected task** sends that task's prompt, selected file context and tool results to your server. API keys are excluded; review the content before uploading.
 - **Download snapshots** retrieves remote task records for viewing. It does not replace local files. Use **Continue locally** to import a conversation, then inspect the selected workspace and start a fresh follow-up.

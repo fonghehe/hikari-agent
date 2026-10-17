@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { Dialog } from './dialog';
+import { useRef, useState } from 'react';
 import { FileText, Image as ImageIcon, Paperclip, X } from 'lucide-react';
 import {
   attachmentLimits,
@@ -136,15 +137,6 @@ export function AttachmentList({
   const [content, setContent] = useState<AttachmentContent>();
   const [error, setError] = useState('');
   const sequence = useRef(0);
-  const dialog = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!selected) return;
-    const previous = document.activeElement as HTMLElement | null;
-    dialog.current?.focus();
-    return () => {
-      if (previous?.isConnected) previous.focus();
-    };
-  }, [selected?.id]);
   const close = () => {
     sequence.current++;
     setSelected(undefined);
@@ -210,94 +202,54 @@ export function AttachmentList({
         </div>
       )}
       {selected && (
-        <div
-          className="modal-backdrop"
-          onClick={close}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.stopPropagation();
-              close();
-            }
-            if (event.key === 'Tab') {
-              const focusable = Array.from(
-                dialog.current?.querySelectorAll<HTMLElement>(
-                  'button,select,input,textarea,a[href]',
-                ) ?? [],
-              ).filter((element) => !element.hasAttribute('disabled'));
-              const first = focusable[0],
-                last = focusable.at(-1);
-              if (
-                event.shiftKey &&
-                (document.activeElement === first || document.activeElement === dialog.current)
-              ) {
-                event.preventDefault();
-                last?.focus();
-              } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-              }
-            }
-          }}
+        <Dialog
+          title={t('Preview {name}', { name: selected.name })}
+          close={close}
+          className="attachment-modal"
         >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('Preview {name}', { name: selected.name })}
-            className="modal attachment-modal"
-            tabIndex={-1}
-            ref={dialog}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="task-heading">
-              <h2>{selected.name}</h2>
-              <button type="button" aria-label={t('Close preview')} onClick={close}>
-                <X size={18} />
-              </button>
+          {error ? (
+            <p role="alert">{error}</p>
+          ) : !content ? (
+            <p role="status">{t('Loading…')}</p>
+          ) : content.image ? (
+            <img
+              className="attachment-full-image"
+              src={`data:${content.image.mimeType};base64,${content.image.data}`}
+              alt={selected.name}
+            />
+          ) : (
+            <pre className="attachment-text">{content.text}</pre>
+          )}
+          {content?.chunks?.length ? (
+            <div className="document-chunks">
+              <label>
+                {t('Document section')}
+                <select
+                  aria-label={t('Document section')}
+                  value={chunkIndex}
+                  onChange={(event) => setChunkIndex(Number(event.target.value))}
+                >
+                  {content.chunks.map((chunk) => (
+                    <option key={chunk.index} value={chunk.index}>
+                      {chunk.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <pre className="attachment-text">{content.chunks[chunkIndex]?.text}</pre>
+              {content.ocr && (
+                <p className="muted">{t('Local OCR text may contain recognition errors.')}</p>
+              )}
             </div>
-            {error ? (
-              <p role="alert">{error}</p>
-            ) : !content ? (
-              <p role="status">{t('Loading…')}</p>
-            ) : content.image ? (
-              <img
-                className="attachment-full-image"
-                src={`data:${content.image.mimeType};base64,${content.image.data}`}
-                alt={selected.name}
-              />
-            ) : (
-              <pre className="attachment-text">{content.text}</pre>
-            )}
-            {content?.chunks?.length ? (
-              <div className="document-chunks">
-                <label>
-                  {t('Document section')}
-                  <select
-                    aria-label={t('Document section')}
-                    value={chunkIndex}
-                    onChange={(event) => setChunkIndex(Number(event.target.value))}
-                  >
-                    {content.chunks.map((chunk) => (
-                      <option key={chunk.index} value={chunk.index}>
-                        {chunk.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <pre className="attachment-text">{content.chunks[chunkIndex]?.text}</pre>
-                {content.ocr && (
-                  <p className="muted">{t('Local OCR text may contain recognition errors.')}</p>
-                )}
-              </div>
-            ) : null}
-            {selected.truncated && (
-              <p className="muted">
-                {t(
-                  'The initial preview is shortened. The agent can search and read the full saved document.',
-                )}
-              </p>
-            )}
-          </section>
-        </div>
+          ) : null}
+          {selected.truncated && (
+            <p className="muted">
+              {t(
+                'The initial preview is shortened. The agent can search and read the full saved document.',
+              )}
+            </p>
+          )}
+        </Dialog>
       )}
     </>
   );

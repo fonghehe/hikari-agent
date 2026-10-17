@@ -81,6 +81,96 @@ export function TaskActions({ task }: { task: Task }) {
           </Button>
         </div>
       )}
+      {!task.demo && !task.chat && <TimelineActions task={task} />}
+    </details>
+  );
+}
+function TimelineActions({ task }: { task: Task }) {
+  const { t, locale } = useI18n();
+  const [entries, setEntries] = useState<Awaited<ReturnType<DesktopAPI['platform']['timeline']>>>(
+    [],
+  );
+  const [selected, setSelected] = useState('');
+  const [preview, setPreview] =
+    useState<Awaited<ReturnType<DesktopAPI['platform']['previewRewind']>>>();
+  const [mode, setMode] = useState<'code' | 'conversation' | 'both'>('conversation');
+  const [busy, setBusy] = useState(false);
+  const action = (work: () => Promise<unknown>) => {
+    setBusy(true);
+    void perform(work).finally(() => setBusy(false));
+  };
+  return (
+    <details>
+      <summary
+        onClick={() => action(async () => setEntries(await api().platform.timeline(task.id)))}
+      >
+        {t('Conversation and code history')}
+      </summary>
+      <select
+        aria-label={t('History checkpoint')}
+        value={selected}
+        onChange={(event) => {
+          setSelected(event.target.value);
+          setPreview(undefined);
+        }}
+      >
+        <option value="">{t('Choose a checkpoint')}</option>
+        {entries.map((entry) => (
+          <option key={entry.id} value={entry.id}>
+            {new Date(entry.at).toLocaleString(locale)} ·{' '}
+            {t(
+              entry.label === 'before'
+                ? 'Before execution'
+                : entry.label === 'restored'
+                  ? 'After restore'
+                  : 'After execution',
+            )}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label={t('Restore mode')}
+        value={mode}
+        onChange={(event) => setMode(event.target.value as typeof mode)}
+      >
+        <option value="conversation">{t('Restore conversation')}</option>
+        <option value="code">{t('Restore code')}</option>
+        <option value="both">{t('Restore code and conversation')}</option>
+      </select>
+      <Button
+        disabled={busy || !selected}
+        variant="outline"
+        onClick={() =>
+          action(async () => setPreview(await api().platform.previewRewind(task.id, selected)))
+        }
+      >
+        {t('Preview restore')}
+      </Button>
+      {preview && (
+        <>
+          <pre>{preview.diff || t('No code changes')}</pre>
+          {preview.files
+            .filter((file) => file.conflict)
+            .map((file) => (
+              <p key={file.path}>
+                {file.path}: {file.conflict}
+              </p>
+            ))}
+          <Button
+            disabled={busy || (mode !== 'conversation' && !preview.applicable)}
+            onClick={() =>
+              action(async () => {
+                const restored = await api().platform.rewind(task.id, selected, mode);
+                await useStore.getState().refresh();
+                if (restored) useStore.setState({ activeId: restored.id });
+                setPreview(undefined);
+              })
+            }
+          >
+            {t('Restore checkpoint')}
+          </Button>
+        </>
+      )}
     </details>
   );
 }
@@ -198,39 +288,5 @@ export function WorktreeActions({ task }: { task: Task }) {
       )}
       {message && <p role="status">{message}</p>}
     </details>
-  );
-}
-export function RecentWorkspaces() {
-  const { t } = useI18n();
-  const [recent, setRecent] = useState<{ root: string; name: string }[]>([]);
-  const workspace = useStore((state) => state.workspace);
-  useEffect(() => {
-    void api()
-      .workspace.recent()
-      .then(setRecent)
-      .catch(() => {});
-  }, [workspace?.root]);
-  if (!recent.length) return null;
-  return (
-    <label className="recent-workspaces">
-      {t('Recent workspaces')}
-      <select
-        value=""
-        onChange={(e) => {
-          const root = e.target.value;
-          if (root)
-            void perform(async () =>
-              useStore.setState({ workspace: await api().workspace.select(root), activeId: null }),
-            );
-        }}
-      >
-        <option value="">{t('Choose a workspace')}</option>
-        {recent.map((item) => (
-          <option key={item.root} value={item.root}>
-            {item.name}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }

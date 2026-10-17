@@ -1,3 +1,4 @@
+import { addWorkspaceProject } from './desktop-window';
 import { test, expect, _electron as electron } from '@playwright/test';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
@@ -62,7 +63,7 @@ test('persists project memory and manages MCP secrets and skills through the des
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [root] });
     }, root);
     const window = await app.firstWindow();
-    await window.getByRole('button', { name: 'Open workspace', exact: true }).click();
+    await addWorkspaceProject(window);
     const id = await window.evaluate(async (url) => {
       const api = globalThis.window.hikari!;
       await api.agent.configure({
@@ -89,10 +90,11 @@ test('persists project memory and manages MCP secrets and skills through the des
       )
       .toBe('completed');
     await window.getByRole('button', { name: 'Memory & extensions', exact: true }).click();
-    const dialog = window.getByRole('dialog', { name: 'Workspace settings' });
+    const dialog = window.getByRole('dialog', { name: 'Memory & extensions' });
     await expect(dialog.getByText('Release convention', { exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: 'Forget', exact: true }).click();
     await expect(dialog.getByText('No saved memory', { exact: true })).toBeVisible();
+    await dialog.getByRole('tab', { name: 'Extensions', exact: true }).click();
     await dialog.getByLabel('Server name', { exact: true }).fill('reference');
     await dialog.getByLabel('Server URL', { exact: true }).fill('https://example.invalid/mcp');
     await dialog

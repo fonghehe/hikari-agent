@@ -11,6 +11,8 @@
     "@hikari/sandbox": "workspace:*",
     "@hikari/tools": "workspace:*",
     "@hikari/mcp": "workspace:*",
-    "@hikari/skills": "workspace:*"
+    "@hikari/skills": "workspace:*",
+    "@hikari/agent-host": "workspace:*",
+    "zod": "^3.25.0"
   }
 }

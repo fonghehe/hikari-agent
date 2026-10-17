@@ -2,7 +2,7 @@
 
 Connect a real model and open a workspace before using extensions. Offline demo does not connect external tools or load project skills.
 
-Open **Memory & extensions** in the sidebar. Add an HTTP or stdio MCP server with its name and address/command. Arguments use one line each. HTTP authorization tokens are stored separately with OS encryption when available, otherwise only in memory; tokens are not written into project configuration or sent to the model. Remove a server from the same screen. Changes apply to new tasks; stop active workspace tasks first.
+Open a project conversation and choose **Memory & extensions** below its input box. Add an HTTP or stdio MCP server with its name and address/command. Arguments use one line each. HTTP authorization tokens are stored separately with OS encryption when available, otherwise only in memory; tokens are not written into project configuration or sent to the model. Remove a server from the same screen. Changes apply to new tasks; stop active workspace tasks first.
 
 Choose **Import skill folder** and select a folder containing `SKILL.md` to install it. Review the skill's description and remove it here when no longer needed. Imports reject symbolic links, duplicate names, over 100 files or over 20 MB. No server or skill script executes during installation.
 
@@ -60,3 +60,7 @@ Suggest improvements without editing files.
 Ask Hikari to list skills, load `frontend-review`, and review your project. Use a folder name and description that fit your workflow. Keep instructions clear about the intended outcome.
 
 Skill tool restrictions still apply during the task. Loading a Skill does not grant permission to run otherwise unapproved operations.
+
+## Plugin packages and language servers
+
+Plugins can bundle Skills, MCP servers, approved lifecycle hooks, agent roles and language-server settings. See [automation and integrations](platform.md) for installation, pinned registries and LSP configuration.

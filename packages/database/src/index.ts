@@ -14,6 +14,10 @@ export const collections = [
   'events',
   'changes',
   'grants',
+  'workers',
+  'jobs',
+  'webhook_deliveries',
+  'worker_claims',
 ] as const;
 export type Collection = (typeof collections)[number];
 export interface RecordEntry {
@@ -31,6 +35,13 @@ export class ConflictError extends Error {
 export interface ListOptions {
   limit?: number;
   offset?: number;
+}
+export interface RecordWrite {
+  collection: Collection;
+  owner: string;
+  id: string;
+  data: unknown;
+  expectedVersion: number;
 }
 export function listBounds(options: ListOptions = {}) {
   const limit = options.limit ?? 500,
@@ -60,14 +71,33 @@ export interface Repository {
 }
 export class SQLiteRepository implements Repository {
   readonly db: DatabaseSync;
-  constructor(filename: string) {
+  constructor(readonly filename: string) {
     this.db = new DatabaseSync(filename);
+    const version = Number(this.db.prepare('PRAGMA user_version').get()?.user_version ?? 0);
+    if (version > 1) {
+      this.db.close();
+      throw new Error('Database requires a newer Hikari version');
+    }
     if (filename !== ':memory:') chmodSync(filename, 0o600);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
     for (const table of collections)
       this.db.exec(
         `CREATE TABLE IF NOT EXISTS ${table} (id TEXT NOT NULL, owner TEXT NOT NULL, version INTEGER NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(owner,id))`,
       );
+    if (version < 1) {
+      this.db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const table of collections)
+          this.db.exec(
+            `CREATE INDEX IF NOT EXISTS ${table}_owner_updated ON ${table}(owner, updated_at DESC, id ASC)`,
+          );
+        this.db.exec('PRAGMA user_version=1; COMMIT');
+      } catch (error) {
+        this.db.exec('ROLLBACK');
+        this.db.close();
+        throw error;
+      }
+    }
   }
   private table(collection: Collection) {
     if (!collections.includes(collection)) throw new Error('Invalid collection');
@@ -107,19 +137,26 @@ export class SQLiteRepository implements Repository {
     data: unknown,
     expectedVersion: number,
   ) {
+    return this.putManySync([{ collection, owner, id, data, expectedVersion }])[0]!;
+  }
+  putManySync(writes: RecordWrite[]) {
+    if (!writes.length) return [];
     const updatedAt = new Date().toISOString();
-    const encoded = JSON.stringify(data);
+    const encoded = writes.map((write) => JSON.stringify(write.data));
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const existing = this.getSync(collection, owner, id);
-      if ((existing?.version ?? 0) !== expectedVersion) throw new ConflictError();
-      this.db
-        .prepare(
-          `INSERT INTO ${this.table(collection)} (id,owner,version,data,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(owner,id) DO UPDATE SET version=excluded.version,data=excluded.data,updated_at=excluded.updated_at`,
-        )
-        .run(id, owner, expectedVersion + 1, encoded, updatedAt);
+      const records = writes.map(({ collection, owner, id, data, expectedVersion }, index) => {
+        const existing = this.getSync(collection, owner, id);
+        if ((existing?.version ?? 0) !== expectedVersion) throw new ConflictError();
+        this.db
+          .prepare(
+            `INSERT INTO ${this.table(collection)} (id,owner,version,data,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(owner,id) DO UPDATE SET version=excluded.version,data=excluded.data,updated_at=excluded.updated_at`,
+          )
+          .run(id, owner, expectedVersion + 1, encoded[index]!, updatedAt);
+        return { id, owner, version: expectedVersion + 1, data, updatedAt };
+      });
       this.db.exec('COMMIT');
-      return { id, owner, version: expectedVersion + 1, data, updatedAt };
+      return records;
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;
@@ -142,6 +179,11 @@ export class SQLiteRepository implements Repository {
   }
   async remove(collection: Collection, owner: string, id: string) {
     this.db.prepare(`DELETE FROM ${this.table(collection)} WHERE owner=? AND id=?`).run(owner, id);
+  }
+  removePrefixSync(collection: Collection, owner: string, prefix: string) {
+    this.db
+      .prepare(`DELETE FROM ${this.table(collection)} WHERE owner=? AND substr(id,1,?)=?`)
+      .run(owner, prefix.length, prefix);
   }
   async close() {
     this.db.close();

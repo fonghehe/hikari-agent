@@ -1,6 +1,7 @@
+import { Dialog } from './dialog';
 import { useI18n } from './i18n';
 import { usePreferences } from './preferences';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { Terminal as XTerminal } from '@xterm/xterm';
 import { Button } from '@hikari/ui';
 import { api, perform, useStore } from './store';
@@ -8,6 +9,7 @@ import { providerCatalog, type ModelConfig, type ChangeDTO } from '@hikari/share
 export function ModelSettings({ close }: { close: () => void }) {
   const { t } = useI18n();
 
+  const formId = useId();
   const [profiles, setProfiles] = useState<ModelConfig[]>([]);
   const [connection, setConnection] = useState('');
   const [testing, setTesting] = useState(false);
@@ -56,21 +58,27 @@ export function ModelSettings({ close }: { close: () => void }) {
     };
   }, []);
   return (
-    <div className="modal-backdrop">
+    <Dialog
+      title={t('Model settings')}
+      close={close}
+      className="model-settings"
+      footer={
+        <Button type="submit" form={formId} disabled={saving}>
+          {saving ? t('Saving…') : t('Connect model')}
+        </Button>
+      }
+    >
       <form
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('Model settings')}
+        id={formId}
         onSubmit={(event) => {
           event.preventDefault();
           void connect({ ...config, baseUrl: config.baseUrl || undefined });
         }}
       >
-        <h2>{t('Connect your model')}</h2>
         <label>
           {t('Saved model profiles')}
           <select
+            aria-label={t('Saved model profiles')}
             value={config.profileId ?? ''}
             onChange={(e) => {
               const profile = profiles.find((item) => item.profileId === e.target.value);
@@ -133,6 +141,7 @@ export function ModelSettings({ close }: { close: () => void }) {
         <label>
           {t('Provider')}
           <select
+            aria-label={t('Provider')}
             value={config.provider}
             onChange={(e) => {
               const provider = e.target.value as ModelConfig['provider'];
@@ -208,9 +217,10 @@ export function ModelSettings({ close }: { close: () => void }) {
           />
           {t('Stream responses')}
         </label>
-        <label>
+        <label className="field-wide">
           {t('Base URL')}
           <input
+            inputMode="url"
             value={config.baseUrl}
             onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
           />
@@ -354,6 +364,7 @@ export function ModelSettings({ close }: { close: () => void }) {
           <label>
             {t('Reasoning effort')}
             <select
+              aria-label={t('Reasoning effort')}
               value={config.reasoningEffort ?? ''}
               onChange={(e) =>
                 setConfig({
@@ -363,9 +374,9 @@ export function ModelSettings({ close }: { close: () => void }) {
               }
             >
               <option value="">{t('Provider default')}</option>
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
+              <option value="low">{t('Low')}</option>
+              <option value="medium">{t('Medium')}</option>
+              <option value="high">{t('High')}</option>
             </select>
           </label>
           <label>
@@ -399,6 +410,7 @@ export function ModelSettings({ close }: { close: () => void }) {
           <label>
             {t('Output limit parameter')}
             <select
+              aria-label={t('Output limit parameter')}
               value={
                 config.tokenParameter ??
                 (config.provider === 'openai' ? 'max_completion_tokens' : 'max_tokens')
@@ -439,16 +451,8 @@ export function ModelSettings({ close }: { close: () => void }) {
           {testing ? t('Checking…') : t('Test connection (uses tokens)')}
         </Button>
         {connection && <p role="status">{connection}</p>}
-        <div className="actions">
-          <Button type="button" variant="ghost" onClick={close}>
-            {t('Cancel')}
-          </Button>
-          <Button type="submit" disabled={saving}>
-            {saving ? t('Saving…') : t('Connect model')}
-          </Button>
-        </div>
       </form>
-    </div>
+    </Dialog>
   );
 }
 export function CodePanel({ content, original }: { content: string; original?: string }) {
@@ -514,11 +518,16 @@ export function TerminalPanel({ taskId }: { taskId?: string }) {
     let disposed = false;
     let cleanup = () => {};
     void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')])
-      .then(([{ Terminal }, { FitAddon }]) => {
+      .then(async ([{ Terminal }, { FitAddon }]) => {
+        await document.fonts.load('13px "Hikari Powerline Symbols"');
         if (disposed || !ref.current) return;
         const term = new Terminal({
           theme: terminalTheme(),
-          fontSize: 12,
+          fontSize: 13,
+          fontFamily:
+            '"Hikari Powerline Symbols", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace',
+          lineHeight: 1.25,
+          minimumContrastRatio: 4.5,
           scrollback: 2000,
           screenReaderMode: true,
         });
@@ -530,6 +539,22 @@ export function TerminalPanel({ taskId }: { taskId?: string }) {
             void perform(() => api().terminal.write(id, data));
         });
         term.open(ref.current);
+        // xterm 5's screen-reader mode ignores non-composition insertText events
+        // (for example emoji keyboards). Keep accessibility enabled and route
+        // those insertions through its public paste API exactly once.
+        const beforeInput = (event: InputEvent) => {
+          if (
+            event.inputType === 'insertText' &&
+            event.data &&
+            Array.from(event.data).some((character) => character.charCodeAt(0) > 127) &&
+            !event.isComposing &&
+            event.cancelable
+          ) {
+            event.preventDefault();
+            term.paste(event.data);
+          }
+        };
+        term.textarea?.addEventListener('beforeinput', beforeInput);
         const buffered = pending.current.get(id);
         live.current = { id, terminal: term, exited: !!buffered?.exited };
         if (buffered) {
@@ -551,6 +576,7 @@ export function TerminalPanel({ taskId }: { taskId?: string }) {
           observer.disconnect();
           live.current = null;
           pending.current.delete(id);
+          term.textarea?.removeEventListener('beforeinput', beforeInput);
           input.dispose();
           term.dispose();
         };
@@ -816,7 +842,16 @@ export function SyncPanel() {
               {t(key)}
               <input
                 aria-label={t(`Sync ${key}`)}
-                type={key === 'password' ? 'password' : 'text'}
+                type={key}
+                autoComplete={
+                  key === 'email'
+                    ? 'username'
+                    : key === 'password'
+                      ? form.register
+                        ? 'new-password'
+                        : 'current-password'
+                      : 'url'
+                }
                 value={form[key]}
                 onChange={(event) => setForm({ ...form, [key]: event.target.value })}
               />
@@ -881,7 +916,10 @@ export function SyncPanel() {
       {remote.map((record) => (
         <details key={record.id}>
           <summary>
-            Task {record.id.slice(0, 8)} · v{record.version}
+            {t('Task {id} · revision {version}', {
+              id: record.id.slice(0, 8),
+              version: record.version,
+            })}
           </summary>
           <Button
             variant="outline"

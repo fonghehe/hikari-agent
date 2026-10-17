@@ -1,8 +1,11 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import { parse } from 'yaml';
 import { z } from 'zod';
 import { LogicalSandboxProvider } from '@hikari/sandbox';
 import { ToolRegistry } from '@hikari/agent-runtime';
+import { StateStore } from '@hikari/agent-runtime';
+import { pluginManifestSchema } from '@hikari/agent-core';
 const metadata = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
@@ -21,19 +24,31 @@ export class SkillLoader {
     private sandbox = new LogicalSandboxProvider(),
   ) {}
   async list(): Promise<Skill[]> {
-    let entries;
+    let entries: Dirent[];
     try {
       entries = await readdir(await this.sandbox.resolve(this.root, '.agent/skills'), {
         withFileTypes: true,
       });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-      throw error;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') entries = [];
+      else throw error;
     }
     const skills: Skill[] = [];
-    for (const entry of entries.slice(0, 100)) {
-      if (!entry.isDirectory()) continue;
-      const file = `.agent/skills/${entry.name}/SKILL.md`;
+    const files = entries
+      .slice(0, 100)
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => ({ file: `.agent/skills/${entry.name}/SKILL.md`, namespace: '' }));
+    for (const plugin of new StateStore(this.root).get<{ name: string }[]>('plugins') ?? []) {
+      const name = pluginManifestSchema.shape.name.parse(plugin.name);
+      const filename = await this.sandbox.resolve(
+        this.root,
+        `.agent/plugins/${name}/hikari-plugin.json`,
+      );
+      const manifest = pluginManifestSchema.parse(JSON.parse(await readFile(filename, 'utf8')));
+      for (const skill of manifest.skills)
+        files.push({ file: `.agent/plugins/${name}/${skill}/SKILL.md`, namespace: `${name}:` });
+    }
+    for (const { file, namespace } of files) {
       const target = await this.sandbox.resolve(this.root, file);
       if ((await stat(target)).size > 64000) throw new Error(`Skill exceeds 64 KB: ${file}`);
       const text = await readFile(target, 'utf8');
@@ -42,7 +57,7 @@ export class SkillLoader {
       const data = metadata.parse(parse(match[1]!));
       const allowed = data['allowed-tools'];
       skills.push({
-        name: data.name,
+        name: namespace + data.name,
         description: data.description,
         instructions: match[2]!,
         path: file,

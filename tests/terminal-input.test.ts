@@ -1,14 +1,14 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
-const pty = vi.hoisted(() => ({ write: vi.fn(), kill: vi.fn(), spawn: vi.fn() }));
+const pty = vi.hoisted(() => ({ write: vi.fn(), kill: vi.fn(), spawn: vi.fn(), onData: vi.fn() }));
 vi.mock('../apps/desktop/node_modules/node-pty', () => ({
   spawn: (...args: unknown[]) => {
     pty.spawn(...args);
-    return { ...pty, onData: () => {}, onExit: () => {} };
+    return { ...pty, onExit: () => {} };
   },
 }));
 import { TerminalSessions } from '../apps/desktop/src/main/terminal';
-import { LogicalSandboxProvider } from '../packages/sandbox/src/logical';
+import { terminalEnvironment } from '../apps/desktop/src/main/terminal-environment';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -42,7 +42,12 @@ it.each(['darwin', 'linux'])('preserves POSIX input bytes on %s', (platform) => 
   const input = "printf 'verified\\n'\r\x1b[A";
   expect(pty.spawn).toHaveBeenCalledWith(platform === 'darwin' ? '/bin/zsh' : '/bin/bash', [], {
     cwd: process.cwd(),
-    env: { ...new LogicalSandboxProvider().environment(), TERM: 'xterm-256color' },
+    env: expect.objectContaining({
+      TERM: 'xterm-256color',
+      LANG: expect.stringMatching(/utf-?8/i),
+      LC_CTYPE: expect.stringMatching(/utf-?8/i),
+    }),
+    encoding: 'utf8',
     cols: 80,
     rows: 24,
     name: 'xterm-256color',
@@ -51,4 +56,35 @@ it.each(['darwin', 'linux'])('preserves POSIX input bytes on %s', (platform) => 
   sessions.write(id, input);
   expect(pty.write).toHaveBeenLastCalledWith(input);
   sessions.close();
+});
+
+it('selects a UTF-8 POSIX locale without inheriting unrelated credentials', () => {
+  expect(terminalEnvironment({}, {}, 'darwin')).toMatchObject({
+    LANG: 'en_US.UTF-8',
+    LC_CTYPE: 'en_US.UTF-8',
+  });
+  expect(terminalEnvironment({ LANG: 'C' }, {}, 'linux')).toMatchObject({
+    LANG: 'C.UTF-8',
+    LC_CTYPE: 'C.UTF-8',
+  });
+  const environment = terminalEnvironment(
+    { LANG: 'en_US.UTF-8' },
+    { LC_CTYPE: 'ja_JP.UTF-8', PRIVATE_KEY: 'fixture' },
+    'darwin',
+  );
+  expect(environment.LC_CTYPE).toBe('ja_JP.UTF-8');
+  expect(environment.PRIVATE_KEY).toBeUndefined();
+});
+
+it('forwards complete Unicode output chunks without cutting off terminal control sequences', () => {
+  const publish = vi.fn();
+  const sessions = new TerminalSessions(publish);
+  try {
+    const id = sessions.create(process.cwd());
+    const output = '中文'.repeat(40000) + '\x1b[0mEND\r\n';
+    pty.onData.mock.calls[0]![0](output);
+    expect(publish).toHaveBeenCalledWith({ id, data: output });
+  } finally {
+    sessions.close();
+  }
 });

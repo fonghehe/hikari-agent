@@ -1,17 +1,23 @@
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { projectInstructions, relevantFiles } from './repository';
 export * from './repository';
 export * from './delivery';
-import { readFile, readdir, stat } from 'node:fs/promises';
+export * from './plugins';
+export * from './hooks';
+export * from './lsp';
+export * from './timeline';
+import { readFile, readdir, stat, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { parsePatch } from 'diff';
-import { AgentError, type ToolContext } from '@hikari/agent-core';
+import { AgentError, redactText, sensitivePath, type ToolContext } from '@hikari/agent-core';
 import { ToolRegistry } from '@hikari/agent-runtime';
 import { LogicalSandboxProvider, type SandboxProvider } from '@hikari/sandbox';
 import { runProcess } from './process';
 import { GitService } from '@hikari/git';
 import { FileChangeService } from './patch';
+import { RedactedOutputStream } from './output-stream';
 export { FileChangeService } from './patch';
 export { runProcess } from './process';
 export const hash = (content: string) => createHash('sha256').update(content).digest('hex');
@@ -40,34 +46,64 @@ export class RepositoryIndexer {
       { cwd: this.root, env: this.sandbox.environment(), signal },
     );
     if (result.exitCode > 1) throw new AgentError('RG_FAILED', result.output);
-    return result.output.trim().split(/\r?\n/).filter(Boolean).slice(0, 10000);
+    return result.output
+      .trim()
+      .split(/\r?\n/)
+      .filter((file) => !!file && !sensitivePath(file))
+      .slice(0, 10000);
   }
   async searchText(query: string, glob = '*', signal: AbortSignal = new AbortController().signal) {
-    const result = await runProcess(
-      'rg',
-      [
-        '--line-number',
-        '--path-separator',
-        '/',
-        '--max-count',
-        '50',
-        '--glob',
-        glob,
-        '--glob',
-        '!.git',
-        '--glob',
-        '!.agent',
-        '--glob',
-        '!node_modules',
-        '--',
-        query,
-        '.',
-      ],
-      { cwd: this.root, env: this.sandbox.environment(), signal },
-    );
-    if (result.exitCode > 1) throw new AgentError('RG_FAILED', result.output);
-    return result.output;
+    const files = await this.findFiles(glob, signal);
+    const temporary = await mkdtemp(path.join(tmpdir(), 'hikari-search-'));
+    let bytes = 0;
+    try {
+      for (const file of files) {
+        signal.throwIfAborted();
+        let source: string;
+        try {
+          source = await this.sandbox.resolve(this.root, file);
+        } catch (error) {
+          if (
+            error instanceof AgentError &&
+            ['SENSITIVE_PATH', 'PATH_ESCAPE', 'PROTECTED_PATH'].includes(error.code)
+          )
+            continue;
+          throw error;
+        }
+        const info = await stat(source);
+        if (info.size > 512000 || (bytes += info.size) > 64000000)
+          throw new AgentError(
+            'SEARCH_LIMIT',
+            'Search input exceeds 512 KB per file or 64 MB total; narrow the file glob.',
+          );
+        const data = await readFile(source);
+        if (data.includes(0)) continue;
+        const destination = path.join(temporary, file);
+        await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+        await writeFile(destination, redactText(data.toString('utf8')), { mode: 0o600 });
+      }
+      const result = await runProcess(
+        'rg',
+        [
+          '--hidden',
+          '--line-number',
+          '--path-separator',
+          '/',
+          '--max-count',
+          '50',
+          '--',
+          query,
+          '.',
+        ],
+        { cwd: temporary, env: this.sandbox.environment(), signal },
+      );
+      if (result.exitCode > 1) throw new AgentError('RG_FAILED', result.output);
+      return result.output;
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
   }
+
   async findSymbol(name: string, signal?: AbortSignal) {
     return this.searchText(
       `(function|class|interface|type|const|def|func)\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
@@ -187,7 +223,7 @@ export function registerFileTools(
   registry.register({
     name: 'read_file',
     description:
-      'Read a bounded UTF-8 file segment and the full file SHA-256. Follow nextOffset to read more; use the full hash for subsequent writes.',
+      'Read a bounded sanitized UTF-8 segment and the original full-file SHA-256. Offsets refer to sanitized text. Follow nextOffset; never overwrite redacted secrets with placeholders. Use focused patches to preserve excluded values.',
     permission: 'filesystem.read',
     schema: z.object({
       path: z.string(),
@@ -199,7 +235,8 @@ export function registerFileTools(
       if ((await stat(target)).size > 512000)
         throw new AgentError('FILE_TOO_LARGE', 'File exceeds 512 KB');
       const content = await readFile(target, 'utf8');
-      let segment = content.slice(input.offset, input.offset + input.limit);
+      const visible = redactText(content);
+      let segment = visible.slice(input.offset, input.offset + input.limit);
       let ruleBudget = 6000;
       const rules = (await projectInstructions(ctx.workspace, input.path))
         .slice(0, 20)
@@ -214,9 +251,9 @@ export function registerFileTools(
           hash: hash(content),
           content: segment,
           offset: input.offset,
-          totalCharacters: content.length,
+          totalCharacters: visible.length,
           nextOffset:
-            input.offset + segment.length < content.length ? input.offset + segment.length : null,
+            input.offset + segment.length < visible.length ? input.offset + segment.length : null,
           projectInstructions: rules,
         });
       // JSON escaping also counts toward the observation budget.
@@ -233,7 +270,7 @@ export function registerFileTools(
   registry.register({
     name: 'write_file',
     description:
-      'Create a file (expectedHash=null) or replace one with a verified SHA-256. Prefer apply_patch for edits.',
+      'Create a file (expectedHash=null) or replace its complete contents using the SHA-256 from read_file. Recommended for small files and for recovering from invalid unified diffs; use apply_patch for larger focused edits. Preserve unrelated content.',
     permission: 'filesystem.write',
     schema: z.object({
       path: z.string(),
@@ -242,6 +279,16 @@ export function registerFileTools(
     }),
     async execute(input, ctx) {
       ctx.signal.throwIfAborted();
+      const target = await sandbox.resolve(ctx.workspace, input.path, true);
+      const before = await readFile(target, 'utf8').catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
+        throw error;
+      });
+      if (redactText(before) !== before && input.content.includes('[REDACTED'))
+        throw new AgentError(
+          'REDACTED_WRITE',
+          'Do not replace a file containing secrets with redacted placeholders. Use a focused patch or edit it manually.',
+        );
       const service = changes ?? new FileChangeService(ctx.workspace, ctx.events);
       const change = await service.write(input.path, input.content, input.expectedHash);
       return { content: JSON.stringify({ id: change.id, path: input.path, hash: change.hash }) };
@@ -256,7 +303,7 @@ export function registerFileTools(
       return {
         content: JSON.stringify(
           (await readdir(await sandbox.resolve(ctx.workspace, input.path), { withFileTypes: true }))
-            .filter((e) => e.name !== '.git')
+            .filter((e) => e.name !== '.git' && !sensitivePath(path.join(input.path, e.name)))
             .map((e) => ({ name: e.name, directory: e.isDirectory() })),
         ),
       };
@@ -292,8 +339,15 @@ export function registerFileTools(
       },
     });
   const schema = z.object({
-    command: z.string(),
-    args: z.array(z.string()).default([]),
+    command: z
+      .string()
+      .describe(
+        'Executable only, for example node. Put flags and script text in args. No shell interpolation.',
+      ),
+    args: z
+      .array(z.string())
+      .default([])
+      .describe('Separate arguments, for example ["--version"] or ["-e", "console.log(1)"].'),
     cwd: z.string().default('.'),
     timeoutMs: z.number().int().min(100).max(120000).default(30000),
   });
@@ -301,8 +355,8 @@ export function registerFileTools(
     registry.register({
       name,
       description: sandbox.launch
-        ? 'Run an executable inside an OS sandbox. Requires approval. Workspace writes only; network depends on the task settings.'
-        : 'Run an executable with host access. Requires approval. Host mode does not provide OS isolation.',
+        ? 'Run an executable inside an OS sandbox. Requires approval. Workspace writes only; network depends on the task settings. Example: {"command":"node","args":["--version"]}. command is an executable, never a whole shell command. node is available on PATH; do not guess absolute paths.'
+        : 'Run an executable with host access. Requires approval. Host mode does not provide OS isolation. Example: {"command":"node","args":["--version"]}. command is an executable, never a whole shell command.',
       permission: 'shell.execute',
       schema,
       async execute(input, ctx: ToolContext) {
@@ -311,15 +365,19 @@ export function registerFileTools(
         const before = await changes?.snapshotExternal(ctx.signal);
         const launch = await sandbox.launch?.(input.command, input.args, cwd);
         let result;
+        const output = new RedactedOutputStream((chunk) =>
+          ctx.events.emit('tool.stdout', { tool: name, chunk }),
+        );
         try {
           result = await runProcess(launch?.command ?? input.command, launch?.args ?? input.args, {
             cwd,
             env: launch?.env ?? sandbox.environment(),
             signal: ctx.signal,
             timeoutMs: input.timeoutMs,
-            stdout: (chunk) => ctx.events.emit('tool.stdout', { tool: name, chunk }),
+            stdout: (chunk) => output.push(chunk),
           });
         } finally {
+          output.flush();
           await launch?.cleanup();
           if (before) await changes?.recordExternal(before);
         }
@@ -332,11 +390,15 @@ export function registerFileTools(
     });
 }
 
-export function registerGitTools(registry: ToolRegistry, changes: FileChangeService) {
+export function registerGitTools(
+  registry: ToolRegistry,
+  changes: FileChangeService,
+  options: { publishDiff?: boolean } = {},
+) {
   registry.register({
     name: 'apply_patch',
     description:
-      'Preview or apply a multi-file unified diff. Declare every touched file with {path, expectedHash} from a prior read_file (expectedHash=null for new files). Headers may use /dev/null to create or delete files, and differing a/ b/ names to rename. Always preview first, then apply the identical diff and entries.',
+      'Preview or apply a multi-file unified diff. Required arguments: {diff, files:[{path,expectedHash}], previewOnly}. Read each file first for its SHA-256; expectedHash=null only for new files. Use --- a/file and +++ b/file headers with correct @@ hunk counts; *** Begin Patch format is NOT supported. Always previewOnly=true first, then apply the identical diff and files with previewOnly=false. If constructing a unified diff fails, use write_file with the hash from read_file. /dev/null headers create/delete files; differing names rename files.',
     permission: 'filesystem.write',
     permissionFor(input) {
       if (input.previewOnly) return 'filesystem.read';
@@ -364,7 +426,7 @@ export function registerGitTools(registry: ToolRegistry, changes: FileChangeServ
       const result = input.previewOnly
         ? await changes.previewFiles(input.files, input.diff)
         : await changes.applyFiles(input.files, input.diff);
-      if (!input.previewOnly) {
+      if (!input.previewOnly && options.publishDiff !== false) {
         try {
           ctx.events.emit('git.diff.updated', { diff: await new GitService(ctx.workspace).diff() });
         } catch {
@@ -386,7 +448,8 @@ export function registerGitTools(registry: ToolRegistry, changes: FileChangeServ
       permission: 'filesystem.read',
       schema: z.object({}),
       async execute(_input, ctx) {
-        return { content: await new GitService(ctx.workspace)[method]() };
+        const git = new GitService(ctx.workspace);
+        return { content: method === 'diff' ? await git.diff(true) : await git[method]() };
       },
     });
 }

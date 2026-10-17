@@ -1,5 +1,6 @@
 import {
   AgentError,
+  sanitizeModelRequest,
   type ModelProvider,
   type ModelRequest,
   type ModelResponse,
@@ -17,6 +18,7 @@ import {
 } from '@langchain/core/messages';
 import { AnthropicProvider, OpenAICompatibleProvider, DemoProvider } from './index';
 import { providerFetch } from './http';
+import { parseModelList } from './discovery';
 
 export function validateEndpoint(endpoint: string) {
   const url = new URL(endpoint);
@@ -174,12 +176,20 @@ class CapabilityProvider implements ModelProvider {
     return this.provider.countTokens(text);
   }
   chat(request: ModelRequest) {
+    request = sanitizeModelRequest(request, [
+      this.config.apiKey,
+      this.config.embeddings?.apiKey ?? '',
+    ]);
     return this.provider.chat({
       ...request,
       tools: this.config.supportsTools === false ? [] : request.tools,
     });
   }
   async *stream(request: ModelRequest) {
+    request = sanitizeModelRequest(request, [
+      this.config.apiKey,
+      this.config.embeddings?.apiKey ?? '',
+    ]);
     const next = { ...request, tools: this.config.supportsTools === false ? [] : request.tools };
     if (this.config.streaming === false) yield await this.provider.chat(next);
     else yield* this.provider.stream(next);
@@ -199,6 +209,7 @@ export function createModelProvider(value: ModelConfig): ModelProvider {
               ...config,
               authType: config.provider === 'azure' ? 'api-key' : 'bearer',
               inlineReasoning: config.provider === 'minimax',
+              requireReasoningContent: config.provider === 'deepseek',
             });
   return new CapabilityProvider(provider, config);
 }
@@ -246,20 +257,5 @@ export async function listModels(
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
-  const payload = JSON.parse(text) as {
-    data?: { id: string }[];
-    models?: { name: string; supportedGenerationMethods?: string[] }[];
-  };
-  return [
-    ...new Set(
-      protocol === 'gemini'
-        ? (payload.models ?? [])
-            .filter((model) => model.supportedGenerationMethods?.includes('generateContent'))
-            .map((model) => model.name.replace(/^models\//, ''))
-        : (payload.data ?? []).map((model) => model.id),
-    ),
-  ]
-    .filter((id) => typeof id === 'string' && id.length <= 120)
-    .sort()
-    .slice(0, 2000);
+  return parseModelList(text, protocol);
 }

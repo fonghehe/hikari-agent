@@ -92,7 +92,7 @@ it('gates review on actual acceptance, isolates the reviewer and denies writes d
     },
   });
   const handoff = (id: string, report: string) => ({
-    text: '',
+    text: `${id}-private-transcript`,
     toolCalls: [{ id, name: 'handoff_stage', input: { report } }],
   });
   const responses: ModelResponse[] = [
@@ -108,7 +108,7 @@ it('gates review on actual acceptance, isolates the reviewer and denies writes d
       text: 'implementation-private-claim',
       toolCalls: [{ id: 'write', name: 'write_fixture', input: {} }],
     },
-    { text: 'ready', toolCalls: [] },
+    { text: '{"verified":true}', toolCalls: [] },
     { text: 'ready after tests', toolCalls: [] },
     {
       text: 'attempt forbidden',
@@ -191,6 +191,98 @@ it('gates review on actual acceptance, isolates the reviewer and denies writes d
   expect(review).toBeDefined();
   expect(JSON.stringify(review.messages)).not.toContain('implementation-private-claim');
   expect(review.tools.some((tool) => tool.name === 'write_fixture')).toBe(false);
+  const planner = requests.find((request) => request.messages[0]?.content.includes('PLANNER:'))!;
+  const implementer = requests.find((request) =>
+    request.messages[0]?.content.includes('IMPLEMENTER:'),
+  )!;
+  expect(JSON.stringify(planner.messages)).not.toContain('investigate-private-transcript');
+  expect(JSON.stringify(implementer.messages)).not.toContain('investigate-private-transcript');
+  expect(JSON.stringify(implementer.messages)).not.toContain('plan-private-transcript');
+  expect(implementer.messages[0]?.content).toContain('system');
+  for (const request of requests)
+    for (const message of request.messages.filter((message) => message.role === 'tool'))
+      expect(
+        request.messages.some((previous) =>
+          previous.toolCalls?.some((call) => call.id === message.toolCallId),
+        ),
+      ).toBe(true);
   expect(parseCheckpoint(checkpoint)?.workflow?.stage).toBe('complete');
+  expect(parseCheckpoint(checkpoint)?.workflow?.stageStart).toBeGreaterThan(0);
   expect(task.runSummary?.verification?.passed).toBe(true);
+  expect(
+    requests.some((request) =>
+      request.messages[0]?.content.includes('Produce the final user-facing answer'),
+    ),
+  ).toBe(false);
+  expect(task.events.find((event) => event.type === 'agent.completed')?.data.text).toBe(
+    '{"verified":true}',
+  );
+});
+
+it('rejects an entire mixed handoff batch and lets the model correct it without losing protocol pairing', async () => {
+  const tasks = new TaskManager(),
+    task = tasks.create('inspect then hand off', '/tmp');
+  task.runOptions = { mode: 'execute', workflow: 'development', maxSteps: 2 };
+  const tools = new ToolRegistry(),
+    events = new EventBus(task);
+  let reads = 0,
+    saved: RunnerCheckpoint | undefined;
+  tools.register({
+    name: 'read_file',
+    description: 'inspect',
+    permission: 'filesystem.read',
+    schema: z.object({}),
+    async execute() {
+      reads++;
+      return { content: 'read' };
+    },
+  });
+  const handoff = {
+    id: 'handoff',
+    name: 'handoff_stage',
+    input: {
+      report:
+        'Inspected the source file and identified a focused implementation and validation path.',
+    },
+  };
+  const responses: ModelResponse[] = [
+    { text: '', toolCalls: [{ id: 'read', name: 'read_file', input: {} }, handoff] },
+    { text: '', toolCalls: [{ ...handoff, id: 'corrected' }] },
+  ];
+  const requests: ModelRequest[] = [];
+  const provider: ModelProvider = {
+    countTokens: (text) => text.length / 4,
+    async chat() {
+      return responses.shift()!;
+    },
+    async *stream(request) {
+      requests.push(request);
+      yield await this.chat(request);
+    },
+  };
+  await new AgentRunner(task, {
+    tasks,
+    tools,
+    events,
+    provider,
+    memory: new MemoryManager(),
+    context: new ContextManager('system'),
+    permissions: { check: async () => true },
+    checkpoints: {
+      load: () => saved,
+      save: (_id, value) => {
+        saved = structuredClone(value);
+      },
+    },
+  }).run();
+  expect(reads).toBe(0);
+  expect(requests).toHaveLength(2);
+  expect(saved?.workflow?.stage).toBe('plan');
+  expect(task.runSummary?.stopReason).toBe('STEP_LIMIT');
+  expect(task.events.filter((event) => event.type === 'tool.failed')).toHaveLength(2);
+  expect(
+    requests[1]?.messages
+      .filter((message) => message.role === 'tool')
+      .map((message) => message.toolCallId),
+  ).toEqual(['read', 'handoff']);
 });

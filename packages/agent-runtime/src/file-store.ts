@@ -7,6 +7,7 @@ import {
   renameSync,
   existsSync,
   unlinkSync,
+  readdirSync,
 } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -57,6 +58,12 @@ export class FileRunStore implements CheckpointStore, MemoryStore {
       throw new Error('Run metadata does not match this workspace');
     return task;
   }
+  tasks(): Task[] {
+    return readdirSync(this.directory)
+      .filter((name) => /^[a-f0-9-]{36}\.json$/i.test(name))
+      .map((name) => this.task(name.slice(0, -5)))
+      .filter((task): task is Task => !!task);
+  }
   saveTask(task: Task) {
     const filename = this.filename(task.id);
     const old = this.read(filename) as { checkpoint?: RunnerCheckpoint } | undefined;
@@ -70,6 +77,21 @@ export class FileRunStore implements CheckpointStore, MemoryStore {
     const filename = this.filename(id);
     const old = this.read(filename) as { task?: Task } | undefined;
     this.write(filename, { task: old?.task, checkpoint });
+  }
+  private outputFile(taskId: string, id: string) {
+    return path.join(
+      this.directory,
+      `output-${z.string().uuid().parse(taskId)}-${z.string().uuid().parse(id)}.json`,
+    );
+  }
+  saveOutput(taskId: string, id: string, content: string) {
+    this.write(this.outputFile(taskId, id), content);
+  }
+  loadOutput(taskId: string, id: string) {
+    const value = this.read(this.outputFile(taskId, id));
+    if (value !== undefined && typeof value !== 'string')
+      throw new Error('Invalid saved tool result');
+    return value as string | undefined;
   }
   private memoryFile(scope: string) {
     return path.join(

@@ -1,0 +1,249 @@
+.app-dialog.project-create-dialog {
+  width: min(480px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--canvas-bg);
+}
+.project-create-dialog .dialog-header {
+  padding: 20px 20px 14px;
+  border: 0;
+}
+.app-dialog.project-create-dialog .dialog-header h2 {
+  font-size: var(--font-heading);
+  line-height: 26px;
+  font-weight: var(--font-weight-heading);
+}
+.project-create-dialog .dialog-body {
+  padding: 0 20px 20px;
+  scrollbar-gutter: auto;
+}
+.app-dialog.project-create-dialog .dialog-body form {
+  gap: 16px;
+}
+.app-dialog.project-create-dialog .dialog-body .project-name-field {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--field-bg);
+}
+.project-name-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+}
+.app-dialog.project-create-dialog .project-name-field input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+}
+.project-create-dialog .project-name-field:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.app-dialog.project-create-dialog .project-name-field input:focus {
+  outline: none;
+  box-shadow: none;
+}
+.app-dialog.project-create-dialog .project-source h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: var(--font-weight-body);
+}
+.project-source-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 108px;
+  padding: 18px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--field-bg);
+}
+.app-dialog.project-create-dialog .project-source-options {
+  position: relative;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.app-dialog.project-create-dialog .project-source-options > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  list-style: none;
+}
+.project-source-options > summary::-webkit-details-marker {
+  display: none;
+}
+.app-dialog.project-create-dialog .project-source-options[open] > .project-source-menu {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 0;
+  max-width: 100%;
+  margin: 10px 0 0;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--canvas-bg);
+  box-shadow: var(--shadow-menu);
+}
+.project-source-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+.project-source-menu button:hover {
+  background: var(--accent-soft);
+}
+.app-dialog.project-create-dialog .project-source-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.project-source-selected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.project-source-selected > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.project-source-selected > svg {
+  flex-shrink: 0;
+}
+.app-dialog.project-create-dialog .project-source-path input {
+  width: 100%;
+  max-width: none;
+}
+.project-create-dialog .dialog-footer {
+  padding: 0 20px 20px;
+  border: 0;
+}
+.project-create-dialog .dialog-footer .project-dialog-actions {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+.project-create-dialog .project-dialog-actions {
+  justify-content: flex-end;
+  gap: 20px;
+  padding-top: 14px;
+}
+.app-dialog.project-create-dialog .project-dialog-actions .button {
+  min-height: 34px;
+  padding: 6px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+.project-create-dialog .project-dialog-actions .button-primary {
+  background: var(--text-primary);
+  color: var(--canvas-bg);
+  border-color: transparent;
+}
+.project-create-dialog .project-dialog-actions .button-ghost {
+  color: var(--text-secondary);
+}
+.project-context-menu.project-list-menu {
+  min-width: 0;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 6px;
+  border-radius: 20px;
+}
+.project-list-menu button {
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.project-list-menu button > svg {
+  width: 18px;
+  height: 18px;
+}
+.projects-section > .sidebar-section-heading {
+  margin-top: 14px;
+}
+.projects-section .section-toggle {
+  flex: 1;
+  gap: 5px;
+}
+.projects-section .section-toggle > .expanded {
+  transform: rotate(90deg);
+}
+
+.task-button[draggable='true'] {
+  cursor: grab;
+}
+.task-button[draggable='true']:active {
+  cursor: grabbing;
+}
+.task-button[data-drop-target] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.merged-history-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 10px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.project-list-menu .project-section-menu {
+  min-width: 0;
+  max-width: min(240px, calc(100vw - 16px));
+  border-radius: 18px;
+}
+.project-list-menu [role='menuitemradio'] {
+  position: relative;
+  padding-inline-end: 36px;
+}
+.project-list-menu [role='menuitemradio'] > svg:last-child:not(:first-child) {
+  position: absolute;
+  inset-inline-end: 10px;
+}

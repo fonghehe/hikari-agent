@@ -63,7 +63,7 @@ test('native picker parses PDF/DOCX, previews, sends attachment-only questions a
     await expect(restored.getByRole('dialog', { name: 'Preview spec.docx' })).toContainText(
       'attachment questions',
     );
-    await restored.getByRole('button', { name: 'Close preview', exact: true }).click();
+    await restored.getByRole('button', { name: 'Close', exact: true }).click();
     await restored.getByRole('button', { name: 'Retry', exact: true }).click();
     await expect(restored.locator('[data-event-type="agent.completed"]')).toContainText(
       'report.pdf',
@@ -103,10 +103,10 @@ test('drop, native screenshot paste, removal, partial errors and conversation dr
     const imageName = await page.locator('.composer .attachment-chip strong').last().innerText();
     await page.getByRole('button', { name: `Preview ${imageName}`, exact: true }).click();
     await expect(page.locator('.attachment-full-image')).toBeVisible();
-    await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByRole('button', { name: `Remove ${imageName}`, exact: true }).click();
     await expect(page.locator('.composer .attachment-chip')).toHaveCount(1);
-    await page.getByRole('button', { name: /New task/ }).click();
+    await page.getByRole('button', { name: /^New task ⌘ N$/ }).click();
     await expect(page.getByRole('textbox', { name: 'Task prompt', exact: true })).toHaveValue('');
     await page.locator('.task-button').first().click();
     await expect(prompt).toHaveValue('Keep this draft');
