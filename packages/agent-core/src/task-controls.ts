@@ -95,6 +95,8 @@ export const runSummarySchema = z.object({
   inputTokens: z.number().nonnegative().optional(),
   outputTokens: z.number().nonnegative().optional(),
   usageEstimated: z.boolean().optional(),
+  cachedInputTokens: z.number().nonnegative().optional(),
+  cacheWriteInputTokens: z.number().nonnegative().optional(),
   costUsd: z.number().nonnegative().optional(),
   verification: z
     .object({

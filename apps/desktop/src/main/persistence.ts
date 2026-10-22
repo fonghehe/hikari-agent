@@ -3,13 +3,37 @@ import { SQLiteRepository } from '@hikari/database';
 import type { Collection } from '@hikari/database';
 import type { Task, AgentEvent } from '@hikari/agent-core';
 import type { RunnerCheckpoint, MemoryEntry } from '@hikari/agent-runtime';
-import { parseCheckpoint } from '@hikari/agent-runtime';
+import {
+  parseCheckpoint,
+  TaskWriteBuffer,
+  appendRequestTrace,
+  parseRequestTraces,
+  type ModelRequestTrace,
+} from '@hikari/agent-runtime';
 import type { Change } from '@hikari/tools';
 export class LocalPersistence {
   readonly repository: SQLiteRepository;
   private vectorSnapshots = new Map<string, Record<string, number[]>>();
-  private pending = new Map<string, { task: Task; events: AgentEvent[]; changes?: Change[] }>();
-  private flushTimer?: ReturnType<typeof setTimeout>;
+  private writes = new TaskWriteBuffer<Change[]>((entries) => {
+    const writes = entries.flatMap((entry) => {
+      const records: { collection: Collection; id: string; data: unknown }[] = [
+        { collection: 'tasks', id: entry.task.id, data: entry.task },
+        ...entry.events.map((event) => ({
+          collection: 'events' as const,
+          id: event.id,
+          data: event,
+        })),
+      ];
+      if (entry.extra !== undefined)
+        records.push({ collection: 'changes', id: entry.task.id, data: entry.extra });
+      return records.map((record) => ({
+        ...record,
+        owner: 'local',
+        expectedVersion: this.get(record.collection, record.id)?.version ?? 0,
+      }));
+    });
+    this.repository.putManySync(writes);
+  });
   constructor(filename: string) {
     this.repository = new SQLiteRepository(filename);
   }
@@ -30,57 +54,20 @@ export class LocalPersistence {
     }
   }
   task(task: Task, event?: AgentEvent, changes?: Change[]) {
-    const entry = this.pending.get(task.id) ?? { task, events: [] };
-    entry.task = task;
-    if (event) entry.events.push(event);
-    if (changes) entry.changes = changes;
-    this.pending.set(task.id, entry);
-    // Presentation updates can share a transaction; all execution boundaries stay durable.
-    if (
-      !event ||
-      ![
-        'agent.message.delta',
-        'tool.stdout',
-        'agent.thinking',
-        'git.diff.updated',
-        'agent.usage',
-      ].includes(event.type)
-    ) {
-      this.flush(task.id);
-    } else if (!this.flushTimer) {
-      this.flushTimer = setTimeout(() => this.flush(), 100);
-      this.flushTimer.unref();
-    }
+    this.writes.update(task, event, changes);
   }
   flush(taskId?: string) {
-    if (this.flushTimer) clearTimeout(this.flushTimer);
-    this.flushTimer = undefined;
-    const entries = taskId ? [...this.pending].filter(([id]) => id === taskId) : [...this.pending];
-    const writes = entries.flatMap(([, entry]) => {
-      const records: { collection: Collection; id: string; data: unknown }[] = [
-        { collection: 'tasks', id: entry.task.id, data: entry.task },
-        ...entry.events.map((event) => ({
-          collection: 'events' as const,
-          id: event.id,
-          data: event,
-        })),
-      ];
-      if (entry.changes)
-        records.push({ collection: 'changes', id: entry.task.id, data: entry.changes });
-      return records.map((record) => ({
-        ...record,
-        owner: 'local',
-        expectedVersion: this.get(record.collection, record.id)?.version ?? 0,
-      }));
-    });
-    this.repository.putManySync(writes);
-    for (const [id] of entries) this.pending.delete(id);
-    if (this.pending.size) {
-      this.flushTimer = setTimeout(() => this.flush(), 100);
-      this.flushTimer.unref();
-    }
+    this.writes.flush(taskId);
   }
   checkpoints = {
+    requests: (taskId: string) =>
+      parseRequestTraces(this.get('tool_calls', `requests:${taskId}`)?.data),
+    saveRequest: (taskId: string, trace: ModelRequestTrace) =>
+      this.save(
+        'tool_calls',
+        `requests:${taskId}`,
+        appendRequestTrace(this.checkpoints.requests(taskId), trace),
+      ),
     load: (id: string): RunnerCheckpoint | undefined => {
       const record = this.get('messages', `checkpoint:${id}`);
       return record ? parseCheckpoint(record.data) : undefined;
@@ -137,6 +124,7 @@ export class LocalPersistence {
   }
   removeTaskOutputs(taskId: string) {
     this.flush(taskId);
+    this.repository.removePrefixSync('tool_calls', 'local', `requests:${taskId}`);
     this.repository.removePrefixSync('tool_calls', 'local', `output:${taskId}:`);
   }
   async removeOrphanAttachments(): Promise<number> {

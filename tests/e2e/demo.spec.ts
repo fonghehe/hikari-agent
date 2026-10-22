@@ -272,6 +272,15 @@ test('terminal button opens a real shell without a model, captures startup outpu
     await openWorkspaceTool(page, 'terminal');
     await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
     await expect(page.locator('.xterm')).toBeVisible();
+    // Font readiness must not depend on the host shell printing Powerline glyphs.
+    expect(
+      await page.evaluate(() =>
+        [...document.fonts].some(
+          (font) => font.family.includes('Hikari Powerline Symbols') && font.status === 'loaded',
+        ),
+      ),
+    ).toBe(true);
+
     if (process.platform === 'win32')
       await expect(page.locator('.terminal-panel')).toContainText(/PS [^>]*>/);
     const input = page.locator('.xterm-helper-textarea');
@@ -291,13 +300,6 @@ test('terminal button opens a real shell without a model, captures startup outpu
     );
     await input.press('Enter');
     await expect(page.locator('.terminal-panel')).toContainText('中文终端_日本語_VERIFIED');
-    expect(
-      await page.evaluate(() =>
-        [...document.fonts].some(
-          (font) => font.family.includes('Hikari Powerline Symbols') && font.status === 'loaded',
-        ),
-      ),
-    ).toBe(true);
     await expect(page.locator('.terminal-panel')).not.toContainText('\uFFFD');
     await page.screenshot({ path: 'test-results/terminal-unicode.png' });
     await input.pressSequentially('exit');

@@ -1,11 +1,10 @@
-import { realpath, readFile, stat } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import {
   runOptionsSchema,
   modeInstruction,
   type Task,
   type ModelProvider,
-  type PermissionManager as PermissionContract,
   type Decision,
   type PermissionRequest,
   type AgentEvent,
@@ -20,163 +19,22 @@ import {
   TaskManager,
   EventBus,
   FileRunStore,
-  SubagentTeam,
   WorkspaceOwnership,
+  ResourceScope,
   registerMemoryTools,
-  type CheckpointStore,
   type UsagePricing,
-  type RunnerCheckpoint,
 } from '@hikari/agent-runtime';
 import {
   FileChangeService,
-  registerFileTools,
-  registerGitTools,
-  registerBrowserTools,
-  registerLSPTools,
-  HookLifecycle,
   TimelineService,
-  installedManifests,
-  expandPlugin,
   projectInstructions,
   type InstalledPlugin,
 } from '@hikari/tools';
-import { registerMCPTools, type MCPConnection } from '@hikari/mcp';
-import { registerSkillTools } from '@hikari/skills';
-import {
-  LogicalSandboxProvider,
-  NativeSandboxProvider,
-  PermissionManager,
-  type SandboxProvider,
-} from '@hikari/sandbox';
+import { PermissionManager } from '@hikari/sandbox';
 import { WorktreeService } from '@hikari/git';
-
-export async function pluginMCP(root: string) {
-  const result: Record<string, MCPConnection> = {};
-  for (const { manifest, directory } of await installedManifests(root))
-    for (const [name, value] of Object.entries(manifest.mcp))
-      result[`${manifest.name}-${name}`] =
-        value.transport === 'stdio'
-          ? {
-              ...value,
-              command: expandPlugin(value.command, directory),
-              args: value.args.map((arg) => expandPlugin(arg, directory)),
-            }
-          : value;
-  return result;
-}
-
-export async function prepareCapabilities(options: {
-  task: Task;
-  tasks: TaskManager;
-  events: EventBus;
-  tools: ToolRegistry;
-  provider: ModelProvider;
-  permissions: PermissionContract;
-  changes: FileChangeService;
-  sandbox: SandboxProvider;
-  configRoot?: string;
-  checkpoints?: CheckpointStore;
-  pricing?: UsagePricing;
-  saveTask?(task: Task): void;
-  onChildChanges?(task: Task, changes: FileChangeService): void;
-}) {
-  const { task, events, permissions, sandbox, changes } = options;
-  const root = task.worktree ?? task.workspace;
-  const configRoot = options.configRoot ?? task.workspace;
-  const plugins = await installedManifests(configRoot);
-  const extensionSandbox =
-    sandbox instanceof NativeSandboxProvider
-      ? new NativeSandboxProvider(
-          root,
-          sandbox.network,
-          plugins.map((plugin) => plugin.directory),
-        )
-      : sandbox;
-  const lsp = await registerLSPTools(options.tools, root, extensionSandbox, configRoot);
-  const hooks = await new HookLifecycle(task, events, permissions, extensionSandbox, changes).load(
-    configRoot,
-  );
-  const timeline = new TimelineService(root);
-  const team = new SubagentTeam({
-    parent: task,
-    tasks: options.tasks,
-    registry: options.tools,
-    events,
-    provider: options.provider,
-    permissions,
-    checkpoints: options.checkpoints,
-    pricing: options.pricing,
-    saveTask: options.saveTask,
-    definitions: plugins.flatMap(({ manifest }) =>
-      manifest.agents.map((agent) => ({ ...agent, name: `${manifest.name}-${agent.name}` })),
-    ),
-    createWorkspace: (child, signal) => {
-      signal.throwIfAborted();
-      return new WorktreeService(root).create(child.id, 'working-tree');
-    },
-    createTools: async (child, bus) => {
-      const childRoot = child.worktree!;
-      const release = new WorkspaceOwnership(childRoot).acquire(child.id);
-      let languageServers: Awaited<ReturnType<typeof registerLSPTools>> | undefined;
-      try {
-        const tools = new ToolRegistry();
-        const childChanges = new FileChangeService(childRoot, bus);
-        options.onChildChanges?.(child, childChanges);
-        const execution =
-          task.runOptions?.execution === 'host'
-            ? new LogicalSandboxProvider()
-            : new NativeSandboxProvider(
-                childRoot,
-                task.runOptions?.allowNetwork,
-                plugins.map((plugin) => plugin.directory),
-              );
-        registerFileTools(tools, execution, childChanges);
-        registerGitTools(tools, childChanges);
-        registerSkillTools(tools, configRoot);
-        languageServers = await registerLSPTools(tools, childRoot, execution, configRoot);
-        const lifecycle = await new HookLifecycle(
-          child,
-          bus,
-          permissions,
-          execution,
-          childChanges,
-        ).load(configRoot);
-        return {
-          tools,
-          lifecycle,
-          close: async () => {
-            try {
-              await languageServers?.close();
-            } finally {
-              release();
-            }
-          },
-        };
-      } catch (error) {
-        try {
-          await languageServers?.close();
-        } finally {
-          release();
-        }
-        throw error;
-      }
-    },
-  });
-  team.register();
-  return {
-    lifecycle: hooks,
-    settleChildren: (signal: AbortSignal) => team.settle(signal),
-    closeChildren: () => team.close(),
-    timeline: async (phase: 'before' | 'after', checkpoint?: RunnerCheckpoint) => {
-      await timeline.capture(task, checkpoint, phase);
-    },
-    close: async () => {
-      await team.close();
-      await lsp.close();
-    },
-  };
-}
-
+export { prepareCapabilities, pluginMCP } from './capabilities';
+export * from './execution';
+import { prepareExecution, runExecution, verifyFileChecks } from './execution';
 export interface SessionHostOptions {
   root: string;
   provider: ModelProvider;
@@ -260,40 +118,20 @@ export class SessionHost {
       if (!saved) this.tasks.remove(task.id);
       throw error;
     }
-    const resources: (() => Promise<void>)[] = [];
+    const resources = new ResourceScope();
     try {
       const events = new EventBus(task);
-      events.subscribe((event) => {
-        this.store.saveTask(task);
-        this.options.publish?.(event);
-      });
-      const registry = new ToolRegistry();
+      events.subscribe((event) => this.store.recordTask(task, event), { critical: true });
+      events.subscribe((event) => this.options.publish?.(event));
+      const registry = new ToolRegistry().scope(resources);
       const changes = new FileChangeService(executionRoot, events);
       this.changes.set(task.id, changes);
-      const sandbox =
-        task.runOptions.execution === 'host'
-          ? new LogicalSandboxProvider()
-          : new NativeSandboxProvider(executionRoot, task.runOptions.allowNetwork);
-      registerFileTools(registry, sandbox, changes);
-      registerGitTools(registry, changes);
       registerMemoryTools(registry, this.store, root);
-      registerSkillTools(registry, root);
-      const mcp = registerMCPTools(registry, executionRoot, events, sandbox, undefined, root, () =>
-        pluginMCP(root),
-      );
-      resources.push(() => mcp.close());
-      const browser = registerBrowserTools(
-        registry,
-        events,
-        this.options.supportsVision ?? false,
-        this.options.searchUrl,
-      );
-      resources.push(() => browser.close());
       const permissions = new PermissionManager(
         events,
         this.options.approve ?? (async () => 'deny'),
       );
-      const advanced = await prepareCapabilities({
+      const prepared = await prepareExecution({
         task,
         tasks: this.tasks,
         events,
@@ -301,13 +139,14 @@ export class SessionHost {
         provider: this.options.provider,
         permissions,
         changes,
-        sandbox,
+        resources,
         configRoot: root,
+        supportsVision: this.options.supportsVision,
+        searchUrl: this.options.searchUrl,
         checkpoints: this.store,
         pricing: this.options.pricing,
-        saveTask: (child) => this.store.saveTask({ ...child, workspace: root }),
+        saveTask: (child, event) => this.store.recordTask({ ...child, workspace: root }, event),
       });
-      resources.push(() => advanced.close());
       const memory = new MemoryManager();
       memory.set(
         'Project guidance (subordinate to the user)',
@@ -329,54 +168,29 @@ export class SessionHost {
         restored,
         pricing: this.options.pricing,
         requestUser: this.options.requestUser,
-        ...advanced,
-        verify: async (signal) => {
-          const checks = [];
-          for (const check of task.runOptions?.checks ?? []) {
-            if (check.kind !== 'file') continue;
-            signal.throwIfAborted();
-            let passed = false;
-            let detail = '';
-            try {
-              const filename = await sandbox.resolve(executionRoot, check.path);
-              const info = await stat(filename).catch((error: NodeJS.ErrnoException) => {
-                if (error.code === 'ENOENT') return undefined;
-                throw error;
-              });
-              passed = !!info === check.exists;
-              if (passed && check.contains !== undefined)
-                passed =
-                  !!info?.isFile() &&
-                  info.size <= 2000000 &&
-                  (await readFile(filename, 'utf8')).includes(check.contains);
-              detail = passed ? 'Verified current file' : 'File acceptance failed';
-            } catch (error) {
-              detail = String(error);
-            }
-            checks.push({ id: check.id, label: check.label, passed, detail });
-          }
-          return { passed: checks.every((check) => check.passed), checks };
-        },
+        ...prepared.runtime,
+        verify: (signal) =>
+          verifyFileChecks(task.runOptions?.checks ?? [], executionRoot, prepared.sandbox, signal),
       });
       this.runners.set(task.id, runner);
       this.store.saveTask(task);
       const completion = Promise.resolve()
-        .then(() => runner.run())
-        .finally(async () => {
-          try {
-            await Promise.allSettled(resources.map((close) => close()));
+        .then(() =>
+          runExecution(runner, resources, () => {
+            this.store.flush(task.id);
             this.store.saveTask(task);
-          } finally {
-            this.runners.delete(task.id);
-            release();
-          }
+          }),
+        )
+        .finally(() => {
+          this.runners.delete(task.id);
+          release();
         });
       this.completions.set(task.id, completion);
       void completion.catch(() => {});
       return task;
     } catch (error) {
       try {
-        await Promise.allSettled(resources.map((close) => close()));
+        await resources.close().catch(() => {});
         task.status = 'failed';
         new EventBus(task).emit('agent.failed', { error: String(error) });
         this.store.saveTask(task);
@@ -421,6 +235,7 @@ export class SessionHost {
   async close() {
     for (const runner of this.runners.values()) runner.interrupt();
     await Promise.allSettled([...this.completions.values()]);
+    this.store.close();
   }
 }
 export type { InstalledPlugin };

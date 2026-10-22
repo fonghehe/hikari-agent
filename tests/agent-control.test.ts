@@ -51,6 +51,100 @@ function fixture(responses: ModelResponse[]) {
   };
   return { task, deps, tools, events, messages, saved: () => saved };
 }
+it('stops before hooks or tool side effects when a critical event cannot be persisted', async () => {
+  const f = fixture([{ text: '', toolCalls: [{ id: 'write', name: 'write_fixture', input: {} }] }]);
+  const effects: string[] = [];
+  f.tools.register({
+    name: 'write_fixture',
+    description: 'write',
+    permission: 'filesystem.write',
+    schema: z.object({}),
+    execute: async () => {
+      effects.push('tool');
+      return { content: 'written' };
+    },
+  });
+  f.events.subscribe(
+    (event) => {
+      if (event.type === 'tool.requested') throw new Error('disk unavailable');
+    },
+    { critical: true },
+  );
+  await new AgentRunner(f.task, {
+    ...f.deps,
+    lifecycle: {
+      dispatch: async (event) => {
+        if (event === 'PreToolUse') effects.push('hook');
+      },
+    },
+  }).run();
+  expect(effects).toEqual([]);
+  expect(f.task.status).toBe('failed');
+  expect(f.task.runSummary?.stopReason).toBe('EVENT_COMMIT_FAILED');
+});
+
+it.each(['permission wait', 'tool execution'])(
+  'checks persistence before the next hook after %s',
+  async (stage) => {
+    const f = fixture([{ text: '', toolCalls: [{ id: 'read', name: 'read_fixture', input: {} }] }]);
+    const effects: string[] = [];
+    let broken = false;
+    const save = f.deps.checkpoints.save;
+    f.deps.checkpoints.save = (id, checkpoint) => {
+      if (broken) throw new Error('disk unavailable');
+      save(id, checkpoint);
+    };
+    f.deps.permissions.check = async () => {
+      broken = stage === 'permission wait';
+      return true;
+    };
+    f.tools.register({
+      name: 'read_fixture',
+      description: 'read',
+      permission: 'filesystem.read',
+      schema: z.object({}),
+      execute: async () => {
+        effects.push('tool');
+        broken = true;
+        return { content: 'read' };
+      },
+    });
+    const runner = new AgentRunner(f.task, {
+      ...f.deps,
+      lifecycle: {
+        dispatch: async (event) => {
+          if (event === 'PreToolUse' || event === 'PostToolUse') effects.push(event);
+        },
+      },
+    });
+    await runner.run().catch(() => {});
+    expect(effects).toEqual(stage === 'permission wait' ? [] : ['PreToolUse', 'tool']);
+    expect(f.task.status).toBe('failed');
+  },
+);
+
+it('settles the in-memory task even if storage also rejects failure reporting', async () => {
+  const f = fixture([{ text: '', toolCalls: [{ id: 'read', name: 'read_fixture', input: {} }] }]);
+  let broken = false;
+  f.tools.register({
+    name: 'read_fixture',
+    description: 'read',
+    permission: 'filesystem.read',
+    schema: z.object({}),
+    execute: async () => {
+      broken = true;
+      return { content: 'read' };
+    },
+  });
+  f.events.subscribe(
+    () => {
+      if (broken) throw new Error('disk unavailable');
+    },
+    { critical: true },
+  );
+  await new AgentRunner(f.task, f.deps).run().catch(() => {});
+  expect(f.task.status).toBe('failed');
+});
 it('recovers malformed model calls without executing partial actions and bounds repeated malformed responses', async () => {
   const f = fixture([]);
   let attempts = 0;

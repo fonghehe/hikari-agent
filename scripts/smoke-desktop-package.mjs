@@ -53,7 +53,7 @@ try {
   await writeFile(files[0], pdfFixture());
   await writeFile(files[1], await docxFixture());
   await writeFile(files[2], await imageFixture());
-  await page.getByRole('button', { name: /New task/ }).click();
+  await page.getByRole('button', { name: /^New task ⌘ N$/ }).click();
   await app.evaluate(({ dialog }, files) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: files });
   }, files);
@@ -80,8 +80,12 @@ try {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] });
     dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
   }, directory);
-  await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
-  await page.getByRole('button', { name: /New task/ }).click();
+  await page.getByRole('button', { name: 'Add project', exact: true }).click();
+  const projectDialog = page.getByRole('dialog', { name: 'Create project', exact: true });
+  await projectDialog.getByRole('button', { name: 'Add folder', exact: true }).click();
+  await projectDialog.getByRole('button', { name: 'Create project', exact: true }).click();
+  await expect(projectDialog).not.toBeVisible();
+  await page.getByRole('button', { name: /^New task ⌘ N$/ }).click();
   await page.getByRole('button', { name: 'Workspace tools', exact: true }).click();
   await page.getByRole('button', { name: 'terminal', exact: true }).click();
   await page.getByRole('button', { name: 'Open terminal', exact: true }).click();

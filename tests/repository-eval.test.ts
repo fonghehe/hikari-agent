@@ -5,11 +5,12 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { GitService } from '../packages/git/src';
 import { repositorySuiteSchema } from '../packages/agent-host/src/evaluation';
 
 const entry = path.resolve('scripts/evals/repository.ts');
-const loader = path.resolve('node_modules/tsx/dist/loader.mjs');
+const loader = pathToFileURL(path.resolve('node_modules/tsx/dist/loader.mjs')).href;
 async function run(root: string, args: string[]) {
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (/^(AGENT_|EVAL_)/.test(name)) delete env[name];

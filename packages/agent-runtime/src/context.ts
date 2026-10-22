@@ -6,6 +6,20 @@ import {
   type ModelProvider,
   type ToolDefinition,
 } from '@hikari/agent-core';
+import type { ContextBuildInfo } from './request-trace';
+
+function compactObservation(content: string) {
+  try {
+    const saved = JSON.parse(content) as { resultId?: unknown; tail?: unknown };
+    if (typeof saved.resultId === 'string' && typeof saved.tail === 'string')
+      return `Saved tool result ${saved.resultId}; use read_tool_result.\n${saved.tail.slice(-180)}`;
+  } catch {
+    /* Ordinary tool text uses the bounded head and tail below. */
+  }
+  return content.length <= 260
+    ? content
+    : `${content.slice(0, 80)}\n[older observation compacted]\n${content.slice(-150)}`;
+}
 
 function messageTokens(provider: ModelProvider, message: Message) {
   return (
@@ -57,6 +71,14 @@ export class MemoryManager {
 }
 export class ContextManager {
   private messages: Message[] = [];
+  lastBuild: ContextBuildInfo = {
+    sourceMessages: 0,
+    admittedMessages: 0,
+    truncatedResults: 0,
+    summarizedExchanges: 0,
+    removedTurns: 0,
+    omittedImages: 0,
+  };
   constructor(
     private system: string,
     private budget = 24000,
@@ -84,6 +106,14 @@ export class ContextManager {
     inputBudget = this.budget,
   ): Message[] {
     const budget = Math.min(this.budget, inputBudget);
+    const info: ContextBuildInfo = {
+      sourceMessages: this.messages.length,
+      admittedMessages: 0,
+      truncatedResults: 0,
+      summarizedExchanges: 0,
+      removedTurns: 0,
+      omittedImages: 0,
+    };
     const context: Message[] = [
       {
         role: 'system',
@@ -103,6 +133,7 @@ export class ContextManager {
     for (const message of imageMessages)
       if (message !== latestReferenceImages && message !== imageMessages.at(-1)) {
         message.images = undefined;
+        info.omittedImages++;
         message.content +=
           '\n[Earlier image data omitted from context. Ask for the image again if needed.]';
       }
@@ -126,7 +157,8 @@ export class ContextManager {
       if (total <= budget) break;
       if (msg.role === 'tool' && msg.content.length > 200 && index < latestToolStart) {
         total -= sizes.get(msg)!;
-        msg.content = msg.content.slice(0, 160) + '\n[older observation truncated]';
+        msg.content = compactObservation(msg.content);
+        info.truncatedResults++;
         const size = messageTokens(provider, msg);
         sizes.set(msg, size);
         total += size;
@@ -149,12 +181,13 @@ export class ContextManager {
         end++;
       const summary = context
         .slice(first + 1, end)
-        .map((m) => m.content.slice(0, 70))
+        .map((m) => compactObservation(m.content))
         .join('; ');
       splice(first, end - first, {
         role: 'assistant',
-        content: `[Earlier tool exchange summarized: ${summary.slice(0, 240)}]`,
+        content: `[Earlier tool exchange summarized: ${summary.slice(0, 360)}]`,
       });
+      info.summarizedExchanges++;
     }
     // The durable summary remains in memory; discard redundant old exchange snippets first.
     while (total > budget) {
@@ -171,6 +204,7 @@ export class ContextManager {
         (message, index) => index > firstUser && message.role === 'user',
       );
       if (next < 0) break;
+      info.removedTurns++;
       const start = firstUser + 1;
       if (next === start) {
         const later = context.findIndex(
@@ -182,6 +216,8 @@ export class ContextManager {
     }
     if (total > budget)
       throw new AgentError('CONTEXT_BUDGET', 'Context budget exhausted. Start a narrower task.');
+    info.admittedMessages = context.length;
+    this.lastBuild = info;
     return context;
   }
 }

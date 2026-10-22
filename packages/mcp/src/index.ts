@@ -161,7 +161,15 @@ export class MCPService {
     await client?.close();
   }
   async close() {
-    for (const name of [...this.clients.keys()]) await this.disconnect(name);
+    const errors: unknown[] = [];
+    for (const name of [...this.clients.keys()].reverse()) {
+      try {
+        await this.disconnect(name);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, 'MCP cleanup failed');
   }
 }
 export function registerMCPTools(

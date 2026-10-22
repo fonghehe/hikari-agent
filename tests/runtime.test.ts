@@ -79,6 +79,26 @@ it('redacts secrets from event subscribers and history', () => {
   expect(JSON.stringify(s.task.events)).not.toContain('private');
 });
 
+it('isolates presentation observers while exposing critical commit failures', () => {
+  const s = setup([]);
+  const seen: string[] = [];
+  s.events.subscribe(() => {
+    throw new Error('UI observer failed');
+  });
+  s.events.subscribe((event) => {
+    seen.push(event.type);
+  });
+  expect(() => s.events.emit('presentation')).not.toThrow();
+  s.events.subscribe(
+    () => {
+      throw new Error('storage failed');
+    },
+    { critical: true },
+  );
+  expect(() => s.events.emit('critical')).toThrow('Event persistence failed');
+  expect(seen).toEqual(['presentation', 'critical']);
+});
+
 it('keeps recent attached images when newer browser screenshots enter context', () => {
   const context = new ContextManager('system', 64000);
   context.add({

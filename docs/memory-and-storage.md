@@ -92,3 +92,11 @@ Common credential patterns and private-key blocks are redacted from contexts, sa
 On Linux, unknown/unavailable stores and `basic_text` do not persist model or MCP secrets. A known `basic_text` backend clears legacy model/profile/MCP credential records. Unknown or temporarily locked stores preserve protected records; new secrets remain in memory. This is not forensic erasure; manage older private backups separately.
 
 Search matches sanitized text, limited to 512 KB per file and 64 MB per call; narrow the glob when exceeded. Read offsets refer to sanitized text while SHA-256 covers original bytes. Whole-file writes containing redaction placeholders are refused when the original has secrets; use focused patches. Sensitive Git diff contents are omitted from agent output for manual review.
+
+## Private model request records
+
+Before calling a model adapter, the runtime records its prepared provider-neutral messages, tool definitions, selected model identity, output limit, estimated input budget and compaction counters. These are private diagnostic inputs, not proof of an HTTP request, a provider wire-format transcript or successful model execution. The record does not include configured API keys; existing best-effort text redaction applies. Full local backups include these private records, while conversation exports and sync snapshots do not.
+
+CLI/worker records use `.agent/runs/requests-<task-id>.json`; desktop records use the private `tool_calls` key `requests:<task-id>`. Each task retains at most 16 records and approximately 8 MB. An individually oversized request keeps metadata and a hash with `omitted: size-limit`, instead of duplicating its input or failing the task. Deleting desktop task outputs also deletes its request records.
+
+Compaction preserves bounded observation heads/tails and saved-result references; it does not replace evidence with an invented semantic summary. Full recovery messages remain unchanged. The latest complete tool exchange and durable task summary keep their existing priority. Provider-reported cached input and cache-write tokens are recorded when available; unavailable values remain absent. Monetary estimates continue to use the configured input/output unit prices and do not infer cache discounts.

@@ -64,3 +64,35 @@ it('compacts to a shrinking per-request allowance without losing the stored reco
   expect(context.snapshot()).toHaveLength(17);
   expect(context.build(provider, new MemoryManager())).toEqual(full);
 });
+
+it('retains failure evidence and saved-result references when compacting old observations', () => {
+  const provider = { countTokens: (text: string) => text.length / 4 } as ModelProvider;
+  const context = new ContextManager('Keep constraints', 1100);
+  context.add({ role: 'user', content: 'Preserve existing files' });
+  context.add({
+    role: 'assistant',
+    content: '',
+    toolCalls: [{ id: 'old', name: 'read_file', input: {} }],
+  });
+  context.add({
+    role: 'tool',
+    toolCallId: 'old',
+    content: JSON.stringify({
+      truncated: true,
+      resultId: '5a052330-053f-4594-b83b-4e954f431981',
+      head: 'x'.repeat(5000),
+      tail: 'FAIL: acceptance test still fails',
+    }),
+  });
+  context.add({
+    role: 'assistant',
+    content: '',
+    toolCalls: [{ id: 'latest', name: 'read_file', input: {} }],
+  });
+  context.add({ role: 'tool', toolCallId: 'latest', content: 'current evidence' });
+  const messages = context.build(provider, new MemoryManager());
+  expect(JSON.stringify(messages)).toContain('5a052330-053f-4594-b83b-4e954f431981');
+  expect(JSON.stringify(messages)).toContain('acceptance test still fails');
+  expect(context.lastBuild.truncatedResults).toBe(1);
+  expect(context.snapshot()[2]?.content).toContain('x'.repeat(5000));
+});

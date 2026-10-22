@@ -28,7 +28,19 @@ export interface ProviderConfig {
 const usageSchema = z.object({
   prompt_tokens: z.number().int().nonnegative(),
   completion_tokens: z.number().int().nonnegative(),
+  prompt_cache_hit_tokens: z.number().int().nonnegative().optional(),
+  prompt_tokens_details: z
+    .object({ cached_tokens: z.number().int().nonnegative().optional() })
+    .optional(),
 });
+function compatibleUsage(stats: z.infer<typeof usageSchema>): ModelUsage {
+  const cached = stats.prompt_cache_hit_tokens ?? stats.prompt_tokens_details?.cached_tokens;
+  return {
+    inputTokens: stats.prompt_tokens,
+    outputTokens: stats.completion_tokens,
+    ...(cached !== undefined ? { cachedInputTokens: Math.min(stats.prompt_tokens, cached) } : {}),
+  };
+}
 function toolInput(argumentsText: string): unknown {
   try {
     return JSON.parse(argumentsText) as unknown;
@@ -163,9 +175,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     return {
       text: this.visible(message.content ?? ''),
       providerData: this.protocolData(message.content ?? '', message.reasoning_content),
-      usage: parsed.usage
-        ? { inputTokens: parsed.usage.prompt_tokens, outputTokens: parsed.usage.completion_tokens }
-        : undefined,
+      usage: parsed.usage ? compatibleUsage(parsed.usage) : undefined,
       toolCalls: (message.tool_calls ?? []).map((t) => ({
         id: t.id,
         name: t.function.name,
@@ -219,12 +229,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       yield {
         text: this.visible(message.content ?? ''),
         providerData: this.protocolData(message.content ?? '', message.reasoning_content),
-        usage: parsed.usage
-          ? {
-              inputTokens: parsed.usage.prompt_tokens,
-              outputTokens: parsed.usage.completion_tokens,
-            }
-          : undefined,
+        usage: parsed.usage ? compatibleUsage(parsed.usage) : undefined,
         toolCalls: (message.tool_calls ?? []).map((tool) => ({
           id: tool.id,
           name: tool.function.name,
@@ -263,11 +268,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const calls = new Map<number, { id: string; name: string; arguments: string }>();
     for await (const raw of sse(response)) {
       const chunk = chunkSchema.parse(raw);
-      if (chunk.usage)
-        usage = {
-          inputTokens: chunk.usage.prompt_tokens,
-          outputTokens: chunk.usage.completion_tokens,
-        };
+      if (chunk.usage) usage = compatibleUsage(chunk.usage);
       const choice = chunk.choices[0];
       if (!choice) {
         if (usage) yield { text: this.visible(text), toolCalls: [], usage };
@@ -435,6 +436,16 @@ export class AnthropicProvider extends OpenAICompatibleProvider {
                 (stats.cache_creation_input_tokens ?? 0) +
                 (stats.cache_read_input_tokens ?? 0),
           outputTokens: stats.output_tokens ?? usage?.outputTokens ?? 0,
+          ...(stats.cache_read_input_tokens !== undefined || usage?.cachedInputTokens !== undefined
+            ? { cachedInputTokens: stats.cache_read_input_tokens ?? usage?.cachedInputTokens }
+            : {}),
+          ...(stats.cache_creation_input_tokens !== undefined ||
+          usage?.cacheWriteInputTokens !== undefined
+            ? {
+                cacheWriteInputTokens:
+                  stats.cache_creation_input_tokens ?? usage?.cacheWriteInputTokens,
+              }
+            : {}),
         };
       if (event.type === 'error')
         throw new AgentError('PROVIDER_STREAM', 'Anthropic stream returned an error');
@@ -484,6 +495,12 @@ export class AnthropicProvider extends OpenAICompatibleProvider {
               (data.usage.cache_creation_input_tokens ?? 0) +
               (data.usage.cache_read_input_tokens ?? 0),
             outputTokens: data.usage.output_tokens ?? 0,
+            ...(data.usage.cache_read_input_tokens !== undefined
+              ? { cachedInputTokens: data.usage.cache_read_input_tokens }
+              : {}),
+            ...(data.usage.cache_creation_input_tokens !== undefined
+              ? { cacheWriteInputTokens: data.usage.cache_creation_input_tokens }
+              : {}),
           }
         : undefined,
       text: data.content

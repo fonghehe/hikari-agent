@@ -11,11 +11,34 @@ import {
 } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { states, type Task } from '@hikari/agent-core';
+import { states, type Task, type AgentEvent } from '@hikari/agent-core';
+import { TaskWriteBuffer } from './persistence-buffer';
+import { appendRequestTrace, parseRequestTraces, type ModelRequestTrace } from './request-trace';
 import { parseCheckpoint, type RunnerCheckpoint, type CheckpointStore } from './checkpoint';
 import type { MemoryEntry, MemoryStore } from './memory';
 export class FileRunStore implements CheckpointStore, MemoryStore {
   private directory: string;
+  private writes = new TaskWriteBuffer((entries) => {
+    for (const { task } of entries) this.saveTask(task);
+  });
+  recordTask(task: Task, event?: AgentEvent) {
+    this.writes.update(task, event);
+  }
+  flush(id?: string) {
+    this.writes.flush(id);
+  }
+  close() {
+    this.flush();
+  }
+  private requestsFile(id: string) {
+    return path.join(this.directory, `requests-${z.string().uuid().parse(id)}.json`);
+  }
+  requests(id: string) {
+    return parseRequestTraces(this.read(this.requestsFile(id)));
+  }
+  saveRequest(id: string, trace: ModelRequestTrace) {
+    this.write(this.requestsFile(id), appendRequestTrace(this.requests(id), trace));
+  }
   constructor(readonly root: string) {
     this.directory = path.join(root, '.agent', 'runs');
     for (const folder of [path.join(root, '.agent'), this.directory]) {
@@ -46,6 +69,7 @@ export class FileRunStore implements CheckpointStore, MemoryStore {
     }
   }
   task(id: string): Task | undefined {
+    this.flush(id);
     const record = this.read(this.filename(id)) as { task?: Task } | undefined;
     const task = record?.task;
     if (!task) return;
@@ -74,6 +98,7 @@ export class FileRunStore implements CheckpointStore, MemoryStore {
     return parseCheckpoint(record?.checkpoint);
   }
   save(id: string, checkpoint: RunnerCheckpoint) {
+    this.flush(id);
     const filename = this.filename(id);
     const old = this.read(filename) as { task?: Task } | undefined;
     this.write(filename, { task: old?.task, checkpoint });

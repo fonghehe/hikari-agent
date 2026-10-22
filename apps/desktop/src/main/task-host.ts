@@ -1,18 +1,16 @@
 import { relevantFiles, projectInstructions } from '@hikari/tools';
-import { readFile, access, stat } from 'node:fs/promises';
 import { LocalPersistence } from './persistence';
 import { DiffRefresh } from './diff-refresh';
 import { AttachmentStore, attachmentMessage, registerAttachmentTools } from './attachments';
 import { randomUUID } from 'node:crypto';
 import type { Change } from '@hikari/tools';
-import { registerMCPTools } from '@hikari/mcp';
-import { registerSkillTools } from '@hikari/skills';
 import {
   registerMemoryTools,
   searchMemory,
   AgentRunner,
   TaskScheduler,
   WorkspaceOwnership,
+  ResourceScope,
   ContextManager,
   EventBus,
   MemoryManager,
@@ -26,15 +24,8 @@ import {
   demoTools,
   demoWorkspace,
 } from '@hikari/model-provider';
-import { NativeSandboxProvider, LogicalSandboxProvider, PermissionManager } from '@hikari/sandbox';
-import {
-  registerFileTools,
-  registerGitTools,
-  FileChangeService,
-  RepositoryIndexer,
-  registerBrowserTools,
-  type BrowserService,
-} from '@hikari/tools';
+import { PermissionManager } from '@hikari/sandbox';
+import { FileChangeService, RepositoryIndexer, type BrowserService } from '@hikari/tools';
 import { GitService, WorktreeService } from '@hikari/git';
 import {
   runOptionsSchema,
@@ -45,7 +36,7 @@ import {
   type Task,
 } from '@hikari/agent-core';
 import type { ModelConfig } from '@hikari/shared';
-import { prepareCapabilities, pluginMCP } from '@hikari/agent-host';
+import { prepareExecution, runExecution, verifyFileChecks } from '@hikari/agent-host';
 export class TaskHost {
   maintenance = false;
   readonly disposers = new Set<() => void>();
@@ -254,7 +245,7 @@ export class TaskHost {
       if (!resumedTask) this.tasks.remove(task.id);
       throw error;
     }
-    const resources: (() => Promise<void>)[] = [];
+    const resources = new ResourceScope();
     try {
       const events = new EventBus(task);
       const changes = chat ? undefined : new FileChangeService(workspace, events);
@@ -267,23 +258,28 @@ export class TaskHost {
         (diff) => events.emit('git.diff.updated', { diff }),
       );
       this.diffRefreshes.set(task.id, diffRefresh);
-      resources.push(async () => {
+      resources.defer(async () => {
         await diffRefresh.flush();
         diffRefresh.close();
         this.diffRefreshes.delete(task.id);
       });
+      events.subscribe(
+        (event) => {
+          this.persistence?.task(
+            task,
+            event,
+            event.type === 'file.changed' ? changes?.history : undefined,
+          );
+        },
+        { critical: true },
+      );
       events.subscribe((event) => {
-        this.persistence?.task(
-          task,
-          event,
-          event.type === 'file.changed' ? changes?.history : undefined,
-        );
         this.publish(event);
         if (event.type === 'file.changed') diffRefresh.request();
         if (['tool.completed', 'tool.failed', 'agent.run.summary'].includes(event.type))
           void diffRefresh.flush();
       });
-      const registry = new ToolRegistry();
+      const registry = new ToolRegistry().scope(resources);
       const scope = chat ? task.workspace : task.worktree ? task.workspace : workspace;
       const retrieval = { embeddings: config.embeddings, cache: this.persistence?.vectors(scope) };
       if (this.persistence)
@@ -299,41 +295,6 @@ export class TaskHost {
         ],
         retrieval,
       );
-      if (changes) {
-        registerFileTools(
-          registry,
-          runOptions.execution === 'host'
-            ? new LogicalSandboxProvider()
-            : new NativeSandboxProvider(workspace, runOptions.allowNetwork),
-          changes,
-        );
-        registerGitTools(registry, changes, { publishDiff: false });
-        registerSkillTools(registry, task.workspace);
-      }
-      const mcp = chat
-        ? undefined
-        : registerMCPTools(
-            registry,
-            workspace,
-            events,
-            runOptions.execution === 'host'
-              ? new LogicalSandboxProvider()
-              : new NativeSandboxProvider(workspace, runOptions.allowNetwork),
-            (name) => this.mcpHeaders(task.workspace, name),
-            task.workspace,
-            () => pluginMCP(task.workspace),
-          );
-      resources.push(async () => {
-        await mcp?.close();
-      });
-      const browser = registerBrowserTools(
-        registry,
-        events,
-        config.supportsVision ?? false,
-        config.searchUrl,
-      );
-      resources.push(() => browser.close());
-      if (browser) this.browsers.set(task.id, browser);
       const permissions = new PermissionManager(
         events,
         (request, signal) =>
@@ -445,40 +406,27 @@ export class TaskHost {
           config.tokenParameter ??
           (config.provider === 'openai' ? 'max_completion_tokens' : 'max_tokens'),
       });
-      let advanced: Awaited<ReturnType<typeof prepareCapabilities>> | undefined;
-      try {
-        advanced = changes
-          ? await prepareCapabilities({
-              task,
-              tasks: this.tasks,
-              events,
-              tools: registry,
-              provider,
-              permissions,
-              changes,
-              sandbox:
-                runOptions.execution === 'host'
-                  ? new LogicalSandboxProvider()
-                  : new NativeSandboxProvider(workspace, runOptions.allowNetwork),
-              configRoot: task.workspace,
-              checkpoints: this.persistence?.checkpoints,
-              pricing: config,
-              saveTask: (child) =>
-                this.persistence?.task(child, undefined, this.changes.get(child.id)?.history),
-              onChildChanges: (child, changes) => this.changes.set(child.id, changes),
-            })
-          : undefined;
-      } catch (error) {
-        events.emit('agent.failed', { error: String(error) });
-        events.emit('agent.state', { state: 'failed' });
-        await mcp?.close();
-        await browser.close();
-        this.persistence?.task(task);
-        throw error;
-      }
-      resources.push(async () => {
-        await advanced?.close();
+      const prepared = await prepareExecution({
+        task,
+        tasks: this.tasks,
+        events,
+        tools: registry,
+        resources,
+        provider,
+        permissions,
+        changes,
+        configRoot: task.workspace,
+        checkpoints: this.persistence?.checkpoints,
+        pricing: config,
+        supportsVision: config.supportsVision,
+        searchUrl: config.searchUrl,
+        publishDiff: false,
+        mcpHeaders: (name) => this.mcpHeaders(task.workspace, name),
+        saveTask: (child, event) =>
+          this.persistence?.task(child, event, this.changes.get(child.id)?.history),
+        onChildChanges: (child, changes) => this.changes.set(child.id, changes),
       });
+      this.browsers.set(task.id, prepared.browser);
       const runner = new AgentRunner(task, {
         tasks: this.tasks,
         events,
@@ -487,7 +435,7 @@ export class TaskHost {
         context,
         memory,
         provider,
-        ...advanced,
+        ...prepared.runtime,
         userMessage: attachmentMessage(prompt, modelValues),
         checkpoints: this.persistence?.checkpoints,
         restored,
@@ -510,40 +458,13 @@ export class TaskHost {
             signal.addEventListener('abort', abort, { once: true });
             if (signal.aborted) abort();
           }),
-        verify: async (signal) => {
-          const checks = [];
-          for (const check of runOptions.checks ?? []) {
-            if (check.kind !== 'file') continue;
-            signal.throwIfAborted();
-            let passed = false;
-            let detail = '';
-            try {
-              if (chat) throw new Error('File acceptance requires a workspace');
-              const filename = await new LogicalSandboxProvider().resolve(workspace, check.path);
-              let exists = true;
-              try {
-                await access(filename);
-              } catch (error) {
-                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-                exists = false;
-              }
-              passed = exists === check.exists;
-              if (passed && check.contains !== undefined) {
-                const info = await stat(filename);
-                if (!info.isFile() || info.size > 2000000)
-                  throw new Error('Text acceptance requires a file smaller than 2 MB');
-                passed = exists && (await readFile(filename, 'utf8')).includes(check.contains);
-              }
-              detail = passed
-                ? 'Verified against current file'
-                : 'File condition was not satisfied';
-            } catch (error) {
-              detail = String(error);
-            }
-            checks.push({ id: check.id, label: check.label, passed, detail });
-          }
-          return { passed: checks.every((check) => check.passed), checks };
-        },
+        verify: (signal) =>
+          verifyFileChecks(
+            runOptions.checks ?? [],
+            chat ? undefined : workspace,
+            prepared.sandbox,
+            signal,
+          ),
       });
       if (this.maintenance) throw new Error('Data maintenance blocks starting this task');
       this.runners.set(task.id, runner);
@@ -554,20 +475,11 @@ export class TaskHost {
             .then(() =>
               this.scheduler.submit(task, {
                 cancel: () => runner.cancel(),
-                run: async () => {
-                  try {
-                    await runner.run();
-                  } finally {
-                    await Promise.allSettled(resources.map((close) => close()));
-                    this.persistence?.flush(task.id);
-                  }
-                },
+                run: () => runExecution(runner, resources, () => this.persistence?.flush(task.id)),
               }),
             )
             .catch((error) => {
-              events.emit('agent.failed', { error: String(error) });
-              if (!['completed', 'failed', 'cancelled'].includes(task.status))
-                events.emit('agent.state', { state: 'failed' });
+              events.reportFailure(error);
             })
             .finally(() => {
               this.runners.delete(task.id);
@@ -579,7 +491,7 @@ export class TaskHost {
       return task;
     } catch (error) {
       try {
-        await Promise.allSettled(resources.map((close) => close()));
+        await resources.close().catch(() => {});
         this.browsers.delete(task.id);
         this.changes.delete(task.id);
         const events = new EventBus(task);
@@ -650,12 +562,19 @@ export class TaskHost {
     this.demos.set(task.id, demo);
     this.persistence?.save('workspaces', `demo:${task.id}`, files);
     const events = new EventBus(task);
-    events.subscribe((event) => {
-      this.persistence?.task(task, event, event.type === 'file.changed' ? demo.changes : undefined);
-      if (event.type === 'file.changed')
-        this.persistence?.save('workspaces', `demo:${task.id}`, files);
-      this.publish(event);
-    });
+    events.subscribe(
+      (event) => {
+        this.persistence?.task(
+          task,
+          event,
+          event.type === 'file.changed' ? demo.changes : undefined,
+        );
+        if (event.type === 'file.changed')
+          this.persistence?.save('workspaces', `demo:${task.id}`, files);
+      },
+      { critical: true },
+    );
+    events.subscribe((event) => this.publish(event));
     const tools = new ToolRegistry();
     for (const tool of demoTools(files, (path, before, after) => {
       demo.changes.push({
@@ -748,10 +667,13 @@ export class TaskHost {
   }
   notifyReview(task: Task, changeId: string, action: string) {
     const bus = new EventBus(task);
-    bus.subscribe((event) => {
-      this.persistence?.task(task, event);
-      this.publish(event);
-    });
+    bus.subscribe(
+      (event) => {
+        this.persistence?.task(task, event);
+      },
+      { critical: true },
+    );
+    bus.subscribe((event) => this.publish(event));
     bus.emit('git.reviewed', { changeId, action, simulated: !!task.demo });
   }
   async control(id: string, action: 'pause' | 'resume' | 'cancel' | 'retry') {

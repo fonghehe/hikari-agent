@@ -71,6 +71,8 @@ export interface ModelUsage {
   inputTokens: number;
   outputTokens: number;
   estimated?: boolean;
+  cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
 }
 export interface UserQuestion {
   id: string;
@@ -163,6 +165,8 @@ export interface Tool<T = unknown> {
   description: string;
   schema: ZodType<T, ZodTypeDef, unknown>;
   permission: Permission;
+  /** Explicit opt-in for independent, side-effect-free filesystem inspection. */
+  parallelSafe?: boolean;
   permissionFor?(input: T): Permission;
   jsonSchema?: Record<string, unknown>;
   execute(input: T, context: ToolContext): Promise<ToolResult>;

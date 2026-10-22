@@ -102,3 +102,13 @@ The Pages workflow reads the deployment base. Local subpath checks must use the 
 Run `pnpm eval:report REPORT.json [REPORT.json ...]` against real-model reports. Defaults: 5 distinct cases, 3 samples each, 90% overall and per-case success, P95 at most 180 seconds. Configure `EVAL_MIN_CASES`, `EVAL_MIN_SAMPLES`, `EVAL_MIN_SUCCESS_RATE`, `EVAL_MAX_P95_MS`. Only one provider/model/workflow and `model-run` evidence are accepted; baseline/demo and duplicate files cannot supply samples. Report metadata alone does not prove an API call. No configured model means gate logic can be tested, not a model success rate.
 
 For release, maintainers must still select licensing, review dependency notices, privacy, paid support and service terms. Prefer a limited local BYOK pilot before public hosted execution. No SLA or arbitrary task correctness is implied.
+
+## Runtime composition and concurrency
+
+`packages/agent-host/src/execution.ts` shares capability assembly, file acceptance and Runner cleanup across desktop, CLI and workers. Desktop conversation/attachment handling and scheduling remain adapters. `ResourceScope` rolls registrations and resources back in reverse order, including after setup failure; every closer is attempted.
+
+A tool may opt into `parallelSafe` only for independent filesystem inspection. The Runner admits permissions in call order and overlaps at most three adjacent opted-in reads, then commits observations in original order. Writes, commands, unknown tools and tool hooks with possible side effects remain sequential. Interruptions wait for active reads to settle; unfinished calls retain their existing checkpoint recovery semantics.
+
+Presentation updates share a 100 ms persistence buffer, capped at 2,000 pending events per task. Tool boundaries, checkpoints, reads and shutdown flush synchronously. A hard process loss can discard the unflushed presentation tail. Persistence subscriptions are critical: write failures stop execution, are checked before lifecycle side effects, and cannot be hidden by a later successful write. Presentation listener failures remain isolated.
+
+Relevant regressions: `file-persistence-batching`, `resource-scope`, `execution-lifecycle`, `request-traces`, `parallel-reads`, `context-budget` and `agent-control`.

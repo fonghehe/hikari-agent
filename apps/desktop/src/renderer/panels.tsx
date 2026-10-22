@@ -519,7 +519,8 @@ export function TerminalPanel({ taskId }: { taskId?: string }) {
     let cleanup = () => {};
     void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')])
       .then(async ([{ Terminal }, { FitAddon }]) => {
-        await document.fonts.load('13px "Hikari Powerline Symbols"');
+        // The face only covers private-use glyphs; the default space matches none.
+        await document.fonts.load('13px "Hikari Powerline Symbols"', '\uE0B0');
         if (disposed || !ref.current) return;
         const term = new Terminal({
           theme: terminalTheme(),

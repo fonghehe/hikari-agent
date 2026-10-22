@@ -1,14 +1,15 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { WorkspaceOwnership, FileRunStore, TaskManager } from '../packages/agent-runtime/src';
 import { SessionHost } from '../packages/agent-host/src';
 import { TaskHost } from '../apps/desktop/src/main/task-host';
 import { LocalPersistence } from '../apps/desktop/src/main/persistence';
-import { TimelineService, FileChangeService } from '../packages/tools/src';
+import { TimelineService, FileChangeService, HookLifecycle } from '../packages/tools/src';
 import { runOptionsSchema, type ModelProvider } from '../packages/agent-core/src';
 
 const roots: string[] = [];
@@ -49,7 +50,7 @@ it('excludes other processes and reclaims the execution owner after a crash', as
       '--input-type=module',
       '-e',
       `
-    import { WorkspaceOwnership } from ${JSON.stringify(path.resolve('packages/agent-runtime/src/workspace-ownership.ts'))};
+    import { WorkspaceOwnership } from ${JSON.stringify(pathToFileURL(path.resolve('packages/agent-runtime/src/workspace-ownership.ts')).href)};
     new WorkspaceOwnership(process.env.TEST_WORKSPACE).acquire('child-task');
     process.send('ready');
     setInterval(() => {}, 1000);
@@ -142,13 +143,44 @@ it('claims before asynchronous setup and releases after setup failure or complet
   expect(WorkspaceOwnership.current(root)).toBeUndefined();
   expect(host.tasks.list()[0]?.status).toBe('failed');
   await rm(path.join(root, '.agent/hooks.json'));
+  let enteredSetup!: () => void;
+  let resumeSetup!: () => void;
+  const setupEntered = new Promise<void>((resolve) => {
+    enteredSetup = resolve;
+  });
+  const setupGate = new Promise<void>((resolve) => {
+    resumeSetup = resolve;
+  });
+  const load = HookLifecycle.prototype.load;
+  const setup = vi.spyOn(HookLifecycle.prototype, 'load').mockImplementationOnce(async function (
+    this: HookLifecycle,
+    root,
+  ) {
+    enteredSetup();
+    await setupGate;
+    return load.call(this, root);
+  });
   const first = host.start('first', runOptionsSchema.parse({ mode: 'plan' }));
-  await expect(host.start('concurrent')).rejects.toThrow('Workspace busy');
-  const task = await first;
-  await host.wait(task.id);
-  expect(task.status).toBe('completed');
-  expect(WorkspaceOwnership.current(root)).toBeUndefined();
-  await host.close();
+  // Canonical path lookups may finish out of order. Hold real setup after it starts
+  // so the assertion checks ownership during setup, not filesystem scheduling.
+  void first.catch(() => {});
+  try {
+    await setupEntered;
+    const owner = host.tasks.list().find((task) => task.prompt === 'first');
+    expect(owner).toBeDefined();
+    expect(WorkspaceOwnership.current(root)?.taskId).toBe(owner!.id);
+    await expect(host.start('concurrent')).rejects.toThrow('Workspace busy');
+    resumeSetup();
+    const task = await first;
+    await host.wait(task.id);
+    expect(task.status).toBe('completed');
+    expect(WorkspaceOwnership.current(root)).toBeUndefined();
+  } finally {
+    resumeSetup();
+    await first.catch(() => {});
+    await host.close();
+    setup.mockRestore();
+  }
 });
 
 it('rejects invalid launches without leaving idle tasks or changing the active task', async () => {

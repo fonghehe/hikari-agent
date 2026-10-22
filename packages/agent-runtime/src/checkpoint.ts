@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { runSummarySchema } from '@hikari/agent-core';
 import type { Message, ModelUsage, RunSummary, ToolCall } from '@hikari/agent-core';
 import type { ToolOutputStore } from './observations';
+import type { RequestTraceStore } from './request-trace';
 export interface RunnerCheckpoint {
   version: 1;
   messages: Message[];
@@ -21,7 +22,7 @@ export interface RunnerCheckpoint {
   done: boolean;
   goal?: import('@hikari/agent-core').Task['goal'];
 }
-export interface CheckpointStore extends Partial<ToolOutputStore> {
+export interface CheckpointStore extends Partial<ToolOutputStore>, Partial<RequestTraceStore> {
   load(id: string): RunnerCheckpoint | undefined;
   save(id: string, checkpoint: RunnerCheckpoint): void;
 }

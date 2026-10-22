@@ -1,4 +1,4 @@
-import { it, expect } from 'vitest';
+import { it, expect, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -80,4 +80,34 @@ it('discovers, validates and calls a real stdio MCP server', async () => {
     await service.close();
   }
   expect(registry.definitions()).toHaveLength(0);
+});
+
+it('attempts every MCP disconnect even if an earlier closer rejects', async () => {
+  const registry = new ToolRegistry();
+  const service = new MCPService(registry, { emit() {} }, process.cwd());
+  const connection = {
+    transport: 'stdio' as const,
+    command: process.execPath,
+    args: [path.resolve('tests/fixtures/mcp-server.mjs')],
+  };
+  const disconnect = service.disconnect.bind(service);
+  let first = true;
+  let restore = () => {};
+  try {
+    await service.connect('first', connection, new AbortController().signal);
+    await service.connect('second', connection, new AbortController().signal);
+    const fault = vi.spyOn(service, 'disconnect').mockImplementation(async (name) => {
+      await disconnect(name);
+      if (first) {
+        first = false;
+        throw new Error('closer failed');
+      }
+    });
+    restore = () => fault.mockRestore();
+    await expect(service.close()).rejects.toThrow();
+    expect(registry.definitions()).toHaveLength(0);
+  } finally {
+    restore();
+    await service.close();
+  }
 });

@@ -16,6 +16,9 @@ import { installedManifests, expandPlugin } from './plugins';
 
 export class HookLifecycle implements Lifecycle {
   private hooks: z.output<typeof hookSchema>[] = [];
+  get parallelReadsSafe() {
+    return !this.hooks.some((hook) => ['PreToolUse', 'PostToolUse'].includes(hook.event));
+  }
   constructor(
     private task: Task,
     private events: EventSink,

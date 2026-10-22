@@ -42,7 +42,7 @@ export interface SubagentOptions {
     task: Task,
     events: EventBus,
   ): Promise<{ tools: ToolRegistry; lifecycle?: Lifecycle; close(): Promise<void> }>;
-  saveTask?(task: Task): void;
+  saveTask?(task: Task, event?: import('@hikari/agent-core').AgentEvent): void;
   definitions?: { name: string; description: string; instructions: string; writable: boolean }[];
 }
 export class SubagentTeam {
@@ -236,16 +236,19 @@ export class SubagentTeam {
       events.emit('subagent.reserved', { id: task.id, tokens, cost });
       const abort = () => runner.interrupt();
       context.signal.addEventListener('abort', abort, { once: true });
+      bus.subscribe((event) => this.options.saveTask?.(task, event), { critical: true });
       bus.subscribe((event) => {
-        this.options.saveTask?.(task);
         events.emit('subagent.event', { id: task.id, type: event.type, data: event.data });
       });
       this.options.saveTask?.(task);
       child.done = runner.run().finally(async () => {
         context.signal.removeEventListener('abort', abort);
-        events.emit('subagent.settled', { id: task.id, tokens, cost, usage: task.runSummary });
-        this.options.saveTask?.(task);
-        await services!.close();
+        try {
+          events.emit('subagent.settled', { id: task.id, tokens, cost, usage: task.runSummary });
+          this.options.saveTask?.(task);
+        } finally {
+          await services!.close();
+        }
       });
       // Retain failures for wait_agent without creating an unhandled rejection.
       void child.done.catch(() => {});

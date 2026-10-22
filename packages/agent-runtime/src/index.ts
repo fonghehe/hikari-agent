@@ -1,4 +1,7 @@
 import { ContextManager, MemoryManager, estimateInputTokens } from './context';
+import { ResourceScope } from './resource-scope';
+import { executeReadBatch } from './parallel-reads';
+export * from './resource-scope';
 export { ContextManager, MemoryManager } from './context';
 import { DevelopmentWorkflow } from './workflow';
 import { FailureTracker } from './failures';
@@ -6,6 +9,8 @@ import type { Lifecycle } from './lifecycle';
 export * from './lifecycle';
 export * from './state-store';
 export * from './workspace-ownership';
+export * from './persistence-buffer';
+export * from './request-trace';
 export * from './automations';
 export * from './subagents';
 import { ToolObservations, type ToolOutputStore } from './observations';
@@ -73,12 +78,29 @@ const transitions: Record<AgentState, readonly AgentState[]> = {
 };
 export class EventBus implements EventSink {
   private listeners = new Set<(event: AgentEvent) => void>();
+  private critical = new Set<(event: AgentEvent) => void>();
   constructor(readonly task: Task) {}
-  subscribe(listener: (event: AgentEvent) => void) {
+  subscribe(listener: (event: AgentEvent) => void, options?: { critical?: boolean }) {
     this.listeners.add(listener);
+    if (options?.critical) this.critical.add(listener);
     return () => {
       this.listeners.delete(listener);
+      this.critical.delete(listener);
     };
+  }
+  /** Execution has stopped; failed persistence must not strand the live UI as running. */
+  reportFailure(error: unknown, state: 'failed' | 'cancelled' | 'interrupted' = 'failed') {
+    this.task.status = state;
+    try {
+      this.emit('agent.state', { state });
+    } catch {
+      /* Report best-effort after fail-stop. */
+    }
+    try {
+      this.emit(`agent.${state}`, { error: errorMessage(error) });
+    } catch {
+      /* Storage may remain unavailable. */
+    }
   }
   emit(type: string, data: Record<string, unknown> = {}) {
     const event: AgentEvent = {
@@ -112,17 +134,29 @@ export class EventBus implements EventSink {
     this.task.updatedAt = event.timestamp;
     this.task.events.push(event);
     if (this.task.events.length > 2000) this.task.events.shift();
+    let commitFailure: unknown;
+    let failed = false;
     for (const listener of this.listeners) {
       try {
         listener(event);
-      } catch {
-        /* An observer cannot break execution. */
+      } catch (error) {
+        if (this.critical.has(listener) && !failed) {
+          failed = true;
+          commitFailure = error;
+        }
+        /* Presentation observers cannot break execution. Durable commits must. */
       }
     }
+    if (failed)
+      throw new AgentError(
+        'EVENT_COMMIT_FAILED',
+        redactText(`Event persistence failed: ${errorMessage(commitFailure)}`),
+      );
   }
 }
 interface RegisteredTool {
   definition: ToolDefinition;
+  parallelSafe: boolean;
   permission: Tool['permission'];
   permissionFor(input: unknown): Tool['permission'];
   parse(input: unknown): unknown;
@@ -131,10 +165,20 @@ interface RegisteredTool {
 export class ToolRegistry {
   private tools = new Map<string, RegisteredTool>();
   private allowed: Set<string> | undefined;
-  restrictions() {
+  private registrations = new Map<string, () => void>();
+  constructor(
+    private parent?: ToolRegistry,
+    private resources?: ResourceScope,
+  ) {}
+  scope(resources: ResourceScope) {
+    return new ToolRegistry(this, resources);
+  }
+  restrictions(): string[] | undefined {
+    if (this.parent) return this.parent.restrictions();
     return this.allowed ? [...this.allowed] : undefined;
   }
-  restrict(names: string[]) {
+  restrict(names: string[]): void {
+    if (this.parent) return this.parent.restrict(names);
     const requested = new Set([
       ...names,
       'list_skills',
@@ -149,9 +193,25 @@ export class ToolRegistry {
       ? new Set([...this.allowed].filter((name) => requested.has(name)))
       : requested;
   }
-  register<T>(tool: Tool<T>) {
+  register<T>(tool: Tool<T>): () => void {
+    if (this.parent) {
+      const dispose = this.parent.register(tool);
+      try {
+        this.resources!.defer(() => {
+          dispose();
+          if (this.registrations.get(tool.name) === dispose) this.registrations.delete(tool.name);
+        });
+        this.registrations.set(tool.name, dispose);
+      } catch (error) {
+        dispose();
+        throw error;
+      }
+      return dispose;
+    }
     if (this.tools.has(tool.name)) throw new AgentError('DUPLICATE_TOOL', tool.name);
-    this.tools.set(tool.name, {
+    const registered: RegisteredTool = {
+      parallelSafe:
+        tool.parallelSafe === true && tool.permission === 'filesystem.read' && !tool.permissionFor,
       permission: tool.permission,
       definition: {
         name: tool.name,
@@ -173,19 +233,30 @@ export class ToolRegistry {
         }
       },
       execute: (input, context) => tool.execute(input as T, context),
-    });
+    };
+    this.tools.set(tool.name, registered);
+    return () => {
+      if (this.tools.get(tool.name) === registered) this.tools.delete(tool.name);
+    };
   }
-  unregister(name: string) {
+  unregister(name: string): void {
+    if (this.parent) {
+      this.registrations.get(name)?.();
+      this.registrations.delete(name);
+      return;
+    }
     this.tools.delete(name);
   }
-  get(name: string) {
+  get(name: string): RegisteredTool {
+    if (this.parent) return this.parent.get(name);
     if (this.allowed && !this.allowed.has(name))
       throw new AgentError('SKILL_TOOL_DENIED', `Active skill does not allow ${name}`);
     const tool = this.tools.get(name);
     if (!tool) throw new AgentError('UNKNOWN_TOOL', `Unknown tool: ${name}`);
     return tool;
   }
-  definitions() {
+  definitions(): ToolDefinition[] {
+    if (this.parent) return this.parent.definitions();
     return [...this.tools.values()]
       .map((tool) => tool.definition)
       .filter((tool) => !this.allowed || this.allowed.has(tool.name));
@@ -689,7 +760,91 @@ export class AgentRunner {
         pending = calls.map((call) => ({ call, state: 'ready' }));
         persist();
         const images: ModelImage[] = [];
-        for (const call of calls) {
+        const parallelAllowed =
+          recordContext &&
+          !mixedHandoff &&
+          (!this.deps.lifecycle ||
+            this.deps.lifecycle.parallelReadsSafe === true ||
+            workflow?.readOnly);
+        const isRead = (call: ToolCall) => {
+          try {
+            return (
+              tools.get(call.name).parallelSafe &&
+              (options.mode !== 'plan' || planningTools.has(call.name)) &&
+              (!workflow ||
+                workflow.allows(
+                  { name: call.name, description: '', parameters: {} },
+                  planningTools,
+                ))
+            );
+          } catch {
+            return false;
+          }
+        };
+        for (let index = 0; index < calls.length; index++) {
+          const call = calls[index]!;
+          const group: ToolCall[] = [];
+          if (parallelAllowed) {
+            for (const candidate of calls.slice(index, index + 3)) {
+              if (!isRead(candidate)) break;
+              group.push(candidate);
+            }
+          }
+          if (group.length > 1) {
+            this.state('waiting_permission');
+            const outcomes = await executeReadBatch(group, {
+              tools,
+              permissions,
+              context: {
+                taskId: this.task.id,
+                workspace: this.task.worktree ?? this.task.workspace,
+                signal: this.controller.signal,
+                events,
+              },
+              checkpoint: () => this.checkpoint(),
+              requested: (entry) => {
+                events.emit('tool.requested', { call: entry });
+                summary.toolCalls++;
+              },
+              admitted: (entries) => {
+                if (!entries.length) return;
+                this.state('executing_tool');
+                for (const { call } of entries)
+                  pending.find((item) => item.call.id === call.id)!.state = 'running';
+                persist();
+                for (const { call, input } of entries)
+                  events.emit('tool.started', { id: call.id, tool: call.name, input });
+              },
+            });
+            // Every active read has settled before interruption can unwind resources.
+            this.controller.signal.throwIfAborted();
+            let repeated = false;
+            for (const { call: entry, result: raw, durationMs } of outcomes) {
+              const result = { ...raw, content: redactText(raw.content) };
+              const observation = this.observations.capture(result.content);
+              events.emit(result.error ? 'tool.failed' : 'tool.completed', {
+                id: entry.id,
+                tool: entry.name,
+                output: observation,
+                duration: durationMs,
+                metadata: result.metadata,
+              });
+              if (result.error) summary.toolFailures++;
+              repeated ||= failures.record(entry, result, revision) >= 3;
+              if (result.image) images.push(result.image);
+              context.add({ role: 'tool', toolCallId: entry.id, content: observation });
+              pending.find((item) => item.call.id === entry.id)!.state = 'done';
+            }
+            this.state('observing');
+            persist();
+            if (repeated)
+              throw new AgentError(
+                'REPEATED_TOOL_FAILURE',
+                'The same tool failed three times without new evidence or file changes.',
+              );
+            index += group.length - 1;
+            continue;
+          }
           await this.checkpoint();
           events.emit('tool.requested', { call });
           summary.toolCalls++;
@@ -739,8 +894,14 @@ export class AgentRunner {
             await this.checkpoint();
             if (!allowed)
               throw new AgentError('PERMISSION_DENIED', `Permission denied: ${call.name}`);
-            if (!workflow?.readOnly)
+            if (
+              !workflow?.readOnly &&
+              this.deps.lifecycle &&
+              !this.deps.lifecycle.parallelReadsSafe
+            ) {
+              persist();
               await this.deps.lifecycle?.dispatch('PreToolUse', this.controller.signal, call);
+            }
             this.state('executing_tool');
             didStart = true;
             checkedRevision = revision;
@@ -757,13 +918,19 @@ export class AgentRunner {
             this.activeToolCallId = undefined;
             this.controller.signal.throwIfAborted();
             result = { ...result, content: redactText(result.content) };
-            if (!workflow?.readOnly)
+            if (
+              !workflow?.readOnly &&
+              this.deps.lifecycle &&
+              !this.deps.lifecycle.parallelReadsSafe
+            ) {
+              persist();
               await this.deps.lifecycle?.dispatch(
                 'PostToolUse',
                 this.controller.signal,
                 call,
                 result,
               );
+            }
             observation = this.observations.capture(result.content);
             events.emit(result.error ? 'tool.failed' : 'tool.completed', {
               id: call.id,
@@ -857,6 +1024,7 @@ export class AgentRunner {
       for (let step = summary.modelSteps; step < stepLimit; step++) {
         await this.checkpoint();
         if (!startedHooks && options.mode !== 'plan' && !workflow?.readOnly) {
+          this.persist();
           await this.deps.lifecycle?.dispatch('SessionStart', this.controller.signal);
           startedHooks = true;
         }
@@ -889,6 +1057,7 @@ export class AgentRunner {
         let response: ModelResponse = { text: '', toolCalls: [] };
         let emittedLength = 0;
         let messages: Message[];
+        let requestContext = context;
         const remaining =
           (options.maxTokens ?? Infinity) -
           (summary.inputTokens ?? 0) -
@@ -915,6 +1084,7 @@ export class AgentRunner {
             workflow.state.stageStart ?? workflow.state.reviewStart ?? snapshot.length;
           const fresh = snapshot.slice(boundary);
           const reviewContext = context.fork();
+          requestContext = reviewContext;
           reviewContext.add(this.deps.userMessage ?? { role: 'user', content: this.task.prompt });
           for (const message of snapshot
             .slice(0, boundary)
@@ -972,6 +1142,19 @@ export class AgentRunner {
           throw new AgentError('TIME_BUDGET', 'Task time budget exhausted.');
         summary.modelSteps++;
         this.persist();
+        this.deps.checkpoints?.saveRequest?.(this.task.id, {
+          version: 1,
+          id: randomUUID(),
+          step: summary.modelSteps,
+          createdAt: new Date().toISOString(),
+          model: this.task.modelIdentity,
+          messages,
+          tools: definitions,
+          inputBudget,
+          estimatedInputTokens: estimatedInput,
+          maxOutputTokens,
+          compaction: { ...requestContext.lastBuild },
+        });
         let invalidResponse: AgentError | undefined;
         try {
           for await (const snapshot of provider.stream({
@@ -999,6 +1182,11 @@ export class AgentRunner {
           summary.inputTokens = (summary.inputTokens ?? 0) + usage.inputTokens;
           summary.outputTokens = (summary.outputTokens ?? 0) + usage.outputTokens;
           summary.usageEstimated ||= !!usage.estimated;
+          if (usage.cachedInputTokens !== undefined)
+            summary.cachedInputTokens = (summary.cachedInputTokens ?? 0) + usage.cachedInputTokens;
+          if (usage.cacheWriteInputTokens !== undefined)
+            summary.cacheWriteInputTokens =
+              (summary.cacheWriteInputTokens ?? 0) + usage.cacheWriteInputTokens;
           const cost = usageCost(usage, this.deps.pricing);
           if (cost !== undefined) summary.costUsd = (summary.costUsd ?? 0) + cost;
           this.persist();
@@ -1007,6 +1195,8 @@ export class AgentRunner {
             outputTokens: summary.outputTokens,
             costUsd: summary.costUsd,
             estimated: summary.usageEstimated,
+            cachedInputTokens: summary.cachedInputTokens,
+            cacheWriteInputTokens: summary.cacheWriteInputTokens,
           });
         }
         if (response.text.length > emittedLength)
@@ -1070,8 +1260,10 @@ export class AgentRunner {
         }
         if (!response.toolCalls.length && !this.task.demo && options.mode !== 'plan') {
           await this.deps.settleChildren?.(this.controller.signal);
-          if (!workflow?.readOnly)
+          if (!workflow?.readOnly) {
+            this.persist();
             await this.deps.lifecycle?.dispatch('Stop', this.controller.signal);
+          }
           const commands = (options.checks ?? []).filter((check) => check.kind === 'test');
           const needed: ToolCall[] = commands
             .filter(
@@ -1275,11 +1467,7 @@ export class AgentRunner {
           : error instanceof AgentError
             ? error.code
             : 'ERROR';
-      events.emit(
-        interrupted ? 'agent.interrupted' : cancelled ? 'agent.cancelled' : 'agent.failed',
-        { error: errorMessage(error) },
-      );
-      this.state(interrupted ? 'interrupted' : cancelled ? 'cancelled' : 'failed');
+      events.reportFailure(error, interrupted ? 'interrupted' : cancelled ? 'cancelled' : 'failed');
     } finally {
       if (deadline) clearTimeout(deadline);
       await this.deps.closeChildren?.();

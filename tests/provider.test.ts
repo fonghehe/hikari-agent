@@ -7,6 +7,21 @@ import {
 } from '../packages/model-provider/src';
 import { providerFetch } from '../packages/model-provider/src/http';
 afterEach(() => vi.unstubAllGlobals());
+it.each([{ prompt_tokens_details: { cached_tokens: 80 } }, { prompt_cache_hit_tokens: 80 }])(
+  'preserves provider-reported cached input usage: %j',
+  async (cache) => {
+    vi.stubGlobal('fetch', async () =>
+      stream([
+        { choices: [{ delta: { content: 'done' }, finish_reason: 'stop' }] },
+        { choices: [], usage: { prompt_tokens: 100, completion_tokens: 5, ...cache } },
+      ]),
+    );
+    const provider = new OpenAICompatibleProvider({ apiKey: 'fixture', model: 'fixture' });
+    const results = [];
+    for await (const result of provider.stream(request)) results.push(result);
+    expect(results.at(-1)?.usage).toMatchObject({ inputTokens: 100, cachedInputTokens: 80 });
+  },
+);
 it('reports bounded provider errors with request IDs while removing actual credentials', async () => {
   const credential = 'arbitrary-private-credential';
   vi.stubGlobal(

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,14 +9,19 @@ import path from 'node:path';
 
 const repository = fileURLToPath(new URL('..', import.meta.url));
 const loader = createRequire(import.meta.url).resolve('tsx');
-async function run(entry: string, cwd: string, args: string[] = []) {
+async function run(entry: string, cwd: string, args: string[] = [], loaderPath = loader) {
   const env = { ...process.env };
   for (const key of Object.keys(env))
     if (key.startsWith('AGENT_') || key.startsWith('EVAL_') || key === 'CAPABILITY_CASES')
       delete env[key];
   const child = spawn(
     process.execPath,
-    ['--import', loader, path.join(repository, 'scripts/evals', entry), ...args],
+    [
+      '--import',
+      pathToFileURL(loaderPath).href,
+      path.join(repository, 'scripts/evals', entry),
+      ...args,
+    ],
     { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   let stdout = '',
@@ -39,6 +44,19 @@ async function run(entry: string, cwd: string, args: string[] = []) {
     child.kill();
   }
 }
+
+it('loads evaluation tooling from paths containing spaces and URL delimiters', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'hikari-eval-loader-'));
+  try {
+    const fixtureLoader = path.join(root, 'loader #100%.mjs');
+    await writeFile(fixtureLoader, `import ${JSON.stringify(pathToFileURL(loader).href)};\n`);
+    const help = await run('run.ts', root, ['--help'], fixtureLoader);
+    expect(help.code, help.stderr).toBe(0);
+    expect(help.stdout).toContain('Desktop model profiles are separate');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it('both evaluation entrypoints provide help and actionable configuration failures', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'hikari-eval-entry-'));

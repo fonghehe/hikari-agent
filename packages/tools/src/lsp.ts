@@ -12,6 +12,8 @@ import { installedManifests, expandPlugin } from './plugins';
 export class LanguageServer {
   private child?: ChildProcessWithoutNullStreams;
   private launch?: ProcessLaunch;
+  private childClosed?: Promise<void>;
+  private closing?: Promise<void>;
   private buffer = Buffer.alloc(0);
   private nextId = 0;
   private pending = new Map<
@@ -174,6 +176,7 @@ export class LanguageServer {
     });
   }
   async start(signal: AbortSignal) {
+    if (this.closing) throw new Error('Language server is closed');
     this.sandbox.validateCommand(this.config.command, this.config.args);
     this.launch = await this.sandbox.launch?.(this.config.command, this.config.args, this.root);
     this.child = spawn(
@@ -187,6 +190,7 @@ export class LanguageServer {
         detached: process.platform !== 'win32',
       },
     );
+    this.childClosed = new Promise<void>((resolve) => this.child!.once('close', () => resolve()));
     this.child.stdout.on('data', (chunk: Buffer) => {
       try {
         this.consume(chunk);
@@ -244,29 +248,38 @@ export class LanguageServer {
     this.versions.set(uri, version);
     return uri;
   }
-  async close() {
+  close(): Promise<void> {
+    if (this.closing) return this.closing;
     this.fail(new Error('Language server closed'));
     const child = this.child;
     this.child = undefined;
-    if (child?.pid) {
-      try {
-        if (process.platform !== 'win32') process.kill(-child.pid, 'SIGTERM');
-        else child.kill();
-      } catch {
-        /* exited */
-      }
-      const timer = setTimeout(() => {
+    this.closing = Promise.resolve().then(async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      if (child?.pid && child.exitCode === null && child.signalCode === null) {
         try {
-          if (process.platform !== 'win32') process.kill(-child.pid!, 'SIGKILL');
-          else child.kill('SIGKILL');
+          if (process.platform !== 'win32') process.kill(-child.pid, 'SIGTERM');
+          else child.kill();
         } catch {
-          /* exited */
+          /* The close event still settles an already-exited child. */
         }
-      }, 800);
-      timer.unref();
-      child.once('close', () => clearTimeout(timer));
-    }
-    await this.launch?.cleanup();
+        timer = setTimeout(() => {
+          try {
+            if (process.platform !== 'win32') process.kill(-child.pid!, 'SIGKILL');
+            else child.kill('SIGKILL');
+          } catch {
+            /* exited */
+          }
+        }, 800);
+        timer.unref();
+      }
+      try {
+        await this.childClosed;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      await this.launch?.cleanup();
+    });
+    return this.closing;
   }
 }
 export async function registerLSPTools(
