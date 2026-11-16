@@ -156,7 +156,9 @@ it('releases a failed spawn once without waiting for a missing pid', async () =>
     root,
     {
       name: 'missing',
-      command,
+      // Keep validation independent of Windows' RUNNER~1 temporary directory.
+      // The launch adapter still supplies the nonexistent absolute executable.
+      command: 'missing-lsp',
       args: [],
       extensions: ['.ts'],
       languageId: 'typescript',

@@ -20,8 +20,10 @@ const defaultExecutable =
 const executablePath = path.resolve(process.argv[2] ?? defaultExecutable);
 await access(executablePath);
 const directory = await mkdtemp(path.join(tmpdir(), 'hikari-package-smoke-'));
+await mkdir(testResults, { recursive: true });
 let app;
 let server;
+let toolObservations = [];
 try {
   app = await electron.launch({
     executablePath,
@@ -144,13 +146,18 @@ try {
     let body = '';
     for await (const chunk of req) body += String(chunk);
     const observations = JSON.parse(body).messages.filter((message) => message.role === 'tool');
+    toolObservations = observations;
+    await writeFile(
+      path.join(testResults, 'packaged-tool-observations.json'),
+      JSON.stringify(observations, null, 2),
+    );
     const message = observations.length
       ? {
           content:
             observations.some((item) => item.content.includes('PACKAGED_BROWSER_VERIFIED')) &&
             observations.some((item) => item.content.includes('"exitCode":0'))
               ? 'Packaged execution verified.'
-              : 'Packaged execution failed.',
+              : `Packaged execution failed: ${JSON.stringify(observations)}`,
         }
       : {
           content: '',
@@ -192,37 +199,43 @@ try {
   await app.evaluate(({ dialog }, root) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [root] });
   }, runtimeRoot);
-  const taskId = await page.evaluate(async (endpoint) => {
-    await window.hikari.workspace.open();
-    await window.hikari.agent.configure({
-      provider: 'compatible',
-      model: 'protocol-fixture',
-      apiKey: '',
-      baseUrl: endpoint + '/v1',
-    });
-    window.hikari.agent.subscribe((event) => {
-      if (event.type === 'permission.requested')
-        void window.hikari.agent.approve(event.taskId, event.data.request.id, 'session');
-    });
-    return (
-      await window.hikari.agent.start('Validate packaged execution tools', false, undefined, {
-        mode: 'execute',
-        maxSteps: 5,
-        requireTests: false,
-        execution: 'restricted',
-        checks: [
-          {
-            id: 'output',
-            label: 'Sandbox output',
-            kind: 'file',
-            path: 'sandbox-output.txt',
-            exists: true,
-            contains: 'sandbox verified',
-          },
-        ],
-      })
-    ).id;
-  }, endpoint);
+  // Hosted Windows has no Linux Docker engine/image. Verify the host adapter
+  // there, and retain real OS sandbox execution on macOS/Linux.
+  const execution = process.platform === 'win32' ? 'host' : 'restricted';
+  const taskId = await page.evaluate(
+    async ({ endpoint, execution }) => {
+      await window.hikari.workspace.open();
+      await window.hikari.agent.configure({
+        provider: 'compatible',
+        model: 'protocol-fixture',
+        apiKey: '',
+        baseUrl: endpoint + '/v1',
+      });
+      window.hikari.agent.subscribe((event) => {
+        if (event.type === 'permission.requested')
+          void window.hikari.agent.approve(event.taskId, event.data.request.id, 'session');
+      });
+      return (
+        await window.hikari.agent.start('Validate packaged execution tools', false, undefined, {
+          mode: 'execute',
+          maxSteps: 5,
+          requireTests: false,
+          execution,
+          checks: [
+            {
+              id: 'output',
+              label: 'Sandbox output',
+              kind: 'file',
+              path: 'sandbox-output.txt',
+              exists: true,
+              contains: 'sandbox verified',
+            },
+          ],
+        })
+      ).id;
+    },
+    { endpoint, execution },
+  );
   await expect
     .poll(
       () =>
@@ -237,16 +250,17 @@ try {
     async (id) => (await window.hikari.agent.list()).find((task) => task.id === id),
     taskId,
   );
-  expect(task.events.find((event) => event.type === 'agent.completed')?.data.text).toBe(
-    'Packaged execution verified.',
-  );
+  expect(
+    task.events.find((event) => event.type === 'agent.completed')?.data.text,
+    `Packaged tool observations: ${JSON.stringify(toolObservations, null, 2)}`,
+  ).toBe('Packaged execution verified.');
   expect(await readFile(path.join(runtimeRoot, 'sandbox-output.txt'), 'utf8')).toBe(
     'sandbox verified',
   );
   await expect(page.locator('.global-error')).toHaveCount(0);
   await page.screenshot({ path: path.join(testResults, 'packaged-app.png') });
   console.log(
-    'Packaged Hikari: icon, secure IPC, offline Q&A, attachments, actual offline OCR, isolated Electron browser with empty cache, OS sandbox execution, acceptance, theme and native PTY passed.',
+    `Packaged Hikari: icon, secure IPC, offline Q&A, attachments, actual offline OCR, isolated Electron browser with empty cache, ${execution === 'restricted' ? 'OS sandbox' : 'host process'} execution, acceptance, theme and native PTY passed.`,
   );
 } finally {
   if (app) await app.close();

@@ -17,21 +17,26 @@ export const createDesktopBrowser: BrowserFactory = async () => {
   delete env.ELECTRON_RUN_AS_NODE;
   const child = spawn(process.execPath, process.defaultApp ? [process.argv[1]!] : [], {
     env,
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', 'pipe'],
     windowsHide: true,
   });
   let launchError: Error | undefined;
+  let diagnostics = '';
+  child.stderr?.on('data', (chunk: Buffer) => {
+    diagnostics = (diagnostics + chunk.toString()).slice(-8192);
+  });
   child.once('error', (error) => {
     launchError = error;
   });
   const exit = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  const running = () => child.exitCode === null && child.signalCode === null;
   let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | undefined;
   const close = async () => {
     await browser?.close().catch(() => {});
-    if (child.exitCode === null) {
+    if (running()) {
       child.kill();
       await Promise.race([exit, delay(2000)]);
-      if (child.exitCode === null) {
+      if (running()) {
         child.kill('SIGKILL');
         await Promise.race([exit, delay(2000)]);
       }
@@ -42,7 +47,10 @@ export const createDesktopBrowser: BrowserFactory = async () => {
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       if (launchError) throw launchError;
-      if (child.exitCode !== null) throw new Error(`Isolated browser exited ${child.exitCode}`);
+      if (!running())
+        throw new Error(
+          `Isolated browser exited ${child.signalCode ?? child.exitCode}: ${diagnostics.trim()}`,
+        );
       try {
         const [port, websocket] = (
           await readFile(path.join(directory, 'DevToolsActivePort'), 'utf8')
@@ -64,7 +72,7 @@ export const createDesktopBrowser: BrowserFactory = async () => {
       }
       await delay(50);
     }
-    throw new Error('Isolated browser did not start within 15 seconds');
+    throw new Error(`Isolated browser did not start within 15 seconds: ${diagnostics.trim()}`);
   } catch (error) {
     await close();
     throw error;

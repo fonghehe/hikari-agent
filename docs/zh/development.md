@@ -48,6 +48,14 @@ Electron E2E 需要图形会话；Linux 无桌面环境时通过 Xvfb 运行。�
 
 Electron 测试使用临时数据目录和可控模型响应。它们验证任务、审批、实际工具执行、恢复和 UI 连接，不能证明线上模型的任务成功率。`pnpm eval:agent --validate` 验证固定评估器；真实模型评估使用 [CLI 文档](cli.md) 中的凭据与评估命令，不要把两者混为一谈。
 
+验证与发布 CI 将 Linux 固定为 `ubuntu-24.04`：Ubuntu 26.04 新增的 AppArmor bubblewrap 策略需要单独适配。Linux 首先预检网络命名空间能否创建。受限评估器和仓库评估集成测试在 macOS/Linux 运行；托管 Windows 没有 Linux Docker 引擎和 `hikari-sandbox:local` 镜像。Windows 仍运行评估帮助与配置、schema、宿主机执行和桌面检查。单测报告保存到 `.artifacts/test-results/unit.xml`，CI 失败时上传。桌面生命周期 E2E 将原生错误弹窗记录为测试失败，避免弹窗悄悄阻塞退出。
+
+CI 将单测并发限制为两个 worker；Windows 为原生文件系统集成测试保留每条 30 秒的时限，其他平台保持 10 秒。打包后，Ubuntu 通过 `scripts/ci/allow-desktop-userns.sh` 仅允许打包的 `hikari` 可执行文件创建用户命名空间，保留 Chromium 沙箱。打包工具的观测结果保存到 `.artifacts/test-results/packaged-tool-observations.json`，便于定位失败原因。
+
+项目打开或任务启动期间，发送和任务切换会暂时禁用，操作完成后恢复，避免延迟返回的项目结果清掉新选择的会话或让发送被忽略。
+
+关闭弹窗时，仅在焦点尚未移动到其他控件的情况下恢复到触发按钮，避免延迟动画帧打断正在进行的键盘导航。
+
 ## TypeScript 契约
 
 `pnpm typecheck` 使用项目已安装的 TypeScript，启用严格检查和 `noUncheckedIndexedAccess`。`isolatedModules` 与 `verbatimModuleSyntax` 检查代码是否适用于 esbuild/Vite 的单文件编译流程，并要求显式区分类型导入。增量缓存保存在已忽略的 `.cache/typecheck.tsbuildinfo`；执行 `pnpm exec tsc --noEmit --incremental false` 可进行无缓存检查。

@@ -58,6 +58,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
 linux:
+  executableName: hikari
   icon: resources/icons/hikari.png
   category: Development
   target:

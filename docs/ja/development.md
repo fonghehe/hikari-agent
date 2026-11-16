@@ -48,6 +48,14 @@ Electron E2E には画面セッションが必要です。ヘッドレス Linux 
 
 Electron テストは一時データと制御されたモデル応答を使い、承認、実際のツール実行、復元、UI の連携を確認します。実モデルのタスク成功率を示すものではありません。`pnpm eval:agent --validate` は固定の採点器を検証します。実モデルの評価には [CLI ガイド](cli.md) の認証情報と評価コマンドを使ってください。
 
+検証とリリース CI の Linux は `ubuntu-24.04` に固定しています。Ubuntu 26.04 の追加 AppArmor bubblewrap ポリシーには別途対応が必要です。Linux は最初にネットワーク名前空間の作成を確認します。制限付きグレーダーとリポジトリ評価の統合テストは macOS/Linux で実行します。ホスト型 Windows には Linux Docker エンジンと `hikari-sandbox:local` イメージがありません。Windows でも評価のヘルプと設定、schema、ホスト実行、デスクトップの検証を行います。単体テストのレポートは `.artifacts/test-results/unit.xml` に保存し、CI 失敗時にアップロードします。デスクトップのライフサイクル E2E はネイティブエラーダイアログをテスト失敗として記録し、終了処理の停止を防ぎます。
+
+CI の単体テストは worker を 2 つに制限します。Windows はネイティブファイル操作を含むテストに 30 秒、他のプラットフォームは 10 秒の期限を設けます。パッケージ後、Ubuntu は `scripts/ci/allow-desktop-userns.sh` を使い、パッケージの `hikari` 実行ファイルだけにユーザー名前空間を許可し、Chromium のサンドボックスを維持します。ツールの結果は `.artifacts/test-results/packaged-tool-observations.json` に保存し、失敗の調査に使います。
+
+プロジェクトを開く間とタスクの開始中は、送信とタスクの切り替えを一時的に無効にします。処理完了後に再び利用できます。遅れた応答が新しく選択した会話を解除したり、送信を取りこぼしたりすることを防ぎます。
+
+ダイアログを閉じる際、フォーカスが他のコントロールへ移動していない場合だけ元のボタンに戻します。遅れたアニメーションフレームがキーボード操作を中断することを防ぎます。
+
 ## TypeScript の契約
 
 `pnpm typecheck` はインストール済みの TypeScript を使い、strict と `noUncheckedIndexedAccess` で検証します。`isolatedModules` と `verbatimModuleSyntax` は esbuild/Vite の単一ファイル変換との互換性を確認し、型専用の import を明示させます。増分キャッシュは Git 管理外の `.cache/typecheck.tsbuildinfo` に保存します。キャッシュを使わない検証には `pnpm exec tsc --noEmit --incremental false` を実行してください。

@@ -120,6 +120,9 @@ for (const language of ['en', 'zh-CN', 'ja'] as const) {
           await row.click({ button: 'right' });
           const menu = page.getByRole('menu', { name: t('Conversation actions'), exact: true });
           await expect(menu).toBeVisible();
+          // Keep native pointer hover from competing with keyboard submenu focus
+          // when screenshot capture recomputes hit testing.
+          await page.mouse.move(0, 0);
           await page.keyboard.press('End');
           await expect(
             menu.getByRole('menuitem', { name: t('Permanently delete'), exact: true }),

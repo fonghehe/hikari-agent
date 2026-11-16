@@ -8,6 +8,8 @@ pnpm test:package
 pnpm desktop:dist
 ```
 
+Linux の実行ファイル名は煙テストの入口と同じ `hikari` に固定します。macOS/Linux のパッケージ煙テストは OS サンドボックス実行を確認します。ホスト型 Windows には Linux Docker エンジンとイメージがないため、ホストプロセス実行を確認します。Windows Docker サンドボックスの動作を証明するものではありません。
+
 esbuild の外部インポートから `dist/runtime-dependencies.json` を作り、`stage-package.mjs` が必要な本番依存を `.artifacts/package/desktop` に配置します。対象 OS/CPU のネイティブ依存、ライセンス、OCR 資産を保持し、テスト、例、ソースマップ、デバッグ記号、他プラットフォームの PTY を除外します。
 
 `package.mjs` は独立した本番アプリから electron-builder を呼び、pnpm の元ワークスペースから不要な依存が戻ることを防ぎます。asar を使い、ネイティブモジュールと OCR Worker の依存閉包だけを必要に応じて展開します。`dist/package-report.json` はステージ容量であり、インストーラー容量とは別です。

@@ -404,7 +404,8 @@ test('project openers use the selected task folder and a worktree fork preserves
       await menu.getByRole('menuitem', { name: opener, exact: true }).click();
     }
     const paths = await app.evaluate(() => Reflect.get(globalThis, 'fixtureOpenedPaths'));
-    expect(paths).toEqual([root, `vscode://file${root}`]);
+    const vscodePath = root.startsWith('/') ? root : `/${root}`;
+    expect(paths).toEqual([root, `vscode://file${vscodePath}`]);
     await row.click({ button: 'right' });
     await menu.getByRole('menuitem', { name: 'Fork', exact: true }).hover();
     await menu.getByRole('menuitem', { name: 'Fork into a new worktree', exact: true }).click();

@@ -46,7 +46,15 @@ pnpm exec playwright test
 
 Electron E2E needs a graphical session; use Xvfb on headless Linux. Documentation tests require built docs and a matching Playwright Chromium installation. For docs-only changes, run `pnpm docs:build` and `pnpm exec playwright test tests/e2e/docs.spec.ts`.
 
+Verify and release CI pin Linux to `ubuntu-24.04`: Ubuntu 26.04's additional AppArmor bubblewrap policy needs separate compatibility work. Linux first probes network namespace creation. Restricted grader and repository-evaluation integrations run on macOS/Linux; hosted Windows has no Linux Docker engine or `hikari-sandbox:local` image. Windows still runs evaluation help/configuration, schema, host execution and desktop checks. Unit reports are saved to `.artifacts/test-results/unit.xml` and uploaded on CI failure. Desktop lifecycle E2E records native error dialogs as test failures so they cannot silently block shutdown.
+
+CI limits unit-test workers to two; Windows allows 30 seconds per test for native filesystem integrations (other platforms retain 10 seconds). After packaging, Ubuntu grants user namespaces only to the packaged `hikari` executable through `scripts/ci/allow-desktop-userns.sh`, keeping Chromium sandboxing enabled. Packaged tool observations are saved to `.artifacts/test-results/packaged-tool-observations.json` for failure diagnosis.
+
 Electron tests use temporary data and controlled model responses. They verify approvals, real tools, recovery and UI integration, not live-model task success rates. `pnpm eval:agent --validate` validates fixed graders; use the credentials and evaluation commands in the [CLI guide](cli.md) for a real-model evaluation.
+
+While a project is opening or a task is starting, sending and task switching are disabled until that operation finishes. This prevents delayed workspace responses from clearing a newly selected conversation or dropping a send.
+
+Closing a dialog restores focus to its trigger only if focus has not already moved to another control; delayed animation frames preserve ongoing keyboard navigation.
 
 ## TypeScript contracts
 

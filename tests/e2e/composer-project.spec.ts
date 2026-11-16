@@ -86,10 +86,34 @@ test('composer selects, searches and clears projects without losing the draft or
       .poll(() => page.evaluate(async () => (await window.hikari!.agent.list())[0]?.status))
       .toBe('completed');
     expect((await page.evaluate(() => window.hikari!.agent.list()))[0]?.chat).toBe(true);
+    await expect(page.locator('.new-task')).toBeEnabled();
     await page.keyboard.press('ControlOrMeta+n');
     await prompt.fill('Use the chosen project');
     await trigger.click();
+    // Hold the selection response after the backend has selected the project.
+    // This reproduces slower Windows indexing without relying on machine speed.
+    const selectedWorkspace = await page.evaluate(
+      (root) => window.hikari!.workspace.select(root),
+      first,
+    );
+    await app.evaluate(({ ipcMain }, workspace) => {
+      ipcMain.removeHandler('workspace:select');
+      ipcMain.handle(
+        'workspace:select',
+        () =>
+          new Promise((resolve) => {
+            Reflect.set(globalThis, 'finishProjectSelection', () => resolve(workspace));
+          }),
+      );
+    }, selectedWorkspace);
     await picker.getByRole('button', { name: 'website · work', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Start task', exact: true })).toBeDisabled();
+    await expect(page.locator('.new-task')).toBeDisabled();
+    await expect(page.locator('.task-button').first()).toBeDisabled();
+    await page.keyboard.press('ControlOrMeta+n');
+    await expect(prompt).toHaveValue('Use the chosen project');
+    await app.evaluate(() => Reflect.get(globalThis, 'finishProjectSelection')());
+    await expect(page.locator('.new-task')).toBeEnabled();
     await page.getByRole('button', { name: 'Start task', exact: true }).click();
     await expect
       .poll(() =>
@@ -106,6 +130,7 @@ test('composer selects, searches and clears projects without losing the draft or
     );
     expect(task?.workspace).toBe(first);
     expect(task?.chat).toBeFalsy();
+    await expect(page.locator('.new-task')).toBeEnabled();
     await page.keyboard.press('ControlOrMeta+n');
     await prompt.fill('Draft survives project creation');
     await page.getByRole('button', { name: 'Change project', exact: true }).click();

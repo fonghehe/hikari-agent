@@ -9,7 +9,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # Ubuntu 26.04 adds a conflicting bwrap-userns-restrict AppArmor profile.
+        # Upgrade the sandbox setup explicitly before moving this baseline.
+        os: [macos-latest, ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -27,6 +29,9 @@ jobs:
           if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
             sudo apparmor_parser -r scripts/ci/bwrap.apparmor
           fi
+      - name: Verify bubblewrap can isolate a process
+        if: runner.os == 'Linux'
+        run: bwrap --unshare-all --ro-bind / / -- /bin/true
       - if: runner.os == 'macOS'
         run: command -v rg || brew install ripgrep
       - if: runner.os == 'Windows'
@@ -43,6 +48,9 @@ jobs:
       - run: xvfb-run -a pnpm exec playwright test
         if: runner.os == 'Linux'
       - run: pnpm desktop:pack
+      - name: Allow packaged Chromium user namespaces on Ubuntu
+        if: runner.os == 'Linux'
+        run: bash scripts/ci/allow-desktop-userns.sh
       - name: Verify packaged desktop
         if: runner.os != 'Linux'
         run: pnpm test:package

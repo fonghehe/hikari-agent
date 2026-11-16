@@ -187,6 +187,8 @@ it('does not certify a blocked deliverable using acceptance from before a later 
   try {
     const task = await host.start('Complete both phases and verify the final result.', {
       mode: 'execute',
+      // This regression checks revision accounting; native isolation has its own suite.
+      execution: 'host',
       maxSteps: 6,
       goal: { objective: 'Complete both phases', maxContinuations: 1 },
       checks: [

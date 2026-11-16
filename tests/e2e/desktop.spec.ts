@@ -1,4 +1,4 @@
-import { mkdtemp as tempDirectory, rm as removeDirectory } from 'node:fs/promises';
+import { mkdtemp as tempDirectory, rm as removeDirectory, readFile } from 'node:fs/promises';
 import { tmpdir as temporaryRoot } from 'node:os';
 import path from 'node:path';
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
@@ -10,20 +10,51 @@ const launch = async (options: Parameters<typeof electron.launch>[0]) => {
   const app = await electron.launch(options);
   liveApps.add(app);
   app.process().once('exit', () => liveApps.delete(app));
+  await app.evaluate(
+    ({ dialog }, filename) => {
+      const { appendFileSync } = process.getBuiltinModule('fs') as typeof import('node:fs');
+      // Electron's default uncaught-error dialog blocks unattended shutdown.
+      // Report it as a test failure instead of leaving an invisible native modal.
+      // A file survives debugger disconnect, unlike console events during quit.
+      dialog.showErrorBox = (title, content) => {
+        appendFileSync(filename, `${title}\n${content}\n`);
+        console.error(`HIKARI_NATIVE_ERROR: ${title}\n${content}`);
+      };
+    },
+    path.join(dataDirectory, 'native-errors.log'),
+  );
   return app;
+};
+const close = async (app: ElectronApplication) => {
+  if (app.process().exitCode !== null || app.process().signalCode !== null) return;
+  const closed = app.waitForEvent('close');
+  // Inspector evaluation can interrupt synchronous application code. Queue quit
+  // on the event loop so it cannot flush SQLite inside an interrupted transaction.
+  await app.evaluate(({ app }) => {
+    setImmediate(() => app.quit());
+  });
+  await closed;
+  await app.close();
 };
 test.beforeEach(async () => {
   dataDirectory = await tempDirectory(path.join(temporaryRoot(), 'forge-desktop-data-'));
 });
 test.afterEach(async () => {
   // Teardown has its own budget even if a timed-out test cannot finish its finally.
-  await Promise.all([...liveApps].map((app) => app.close()));
+  await Promise.all([...liveApps].map((app) => close(app)));
+  const errors = await readFile(path.join(dataDirectory, 'native-errors.log'), 'utf8').catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return '';
+      throw error;
+    },
+  );
   await removeDirectory(dataDirectory, {
     recursive: true,
     force: true,
     maxRetries: 5,
     retryDelay: 200,
   });
+  expect(errors, 'Unexpected Electron error dialogs').toBe('');
 });
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 test('desktop starts with secure preload and empty workspace', async () => {
@@ -45,7 +76,7 @@ test('desktop starts with secure preload and empty workspace', async () => {
     ).toBe('undefined');
     await window.screenshot({ path: '.artifacts/test-results/desktop.png' });
   } finally {
-    await app.close();
+    await close(app);
   }
 });
 
@@ -174,7 +205,7 @@ test('real IPC runs tools and preserves follow-up context in the same worktree',
     expect(turns[1]!.worktree).toBe(turns[0]!.worktree);
     await page.screenshot({ path: '.artifacts/test-results/task-flow.png' });
   } finally {
-    await app.close();
+    await close(app);
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(root, { recursive: true, force: true });
   }
@@ -318,7 +349,7 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
     await expect(page.getByText('Accepted', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Undo', exact: true }).click();
     await expect.poll(() => readFile(path.join(root, 'sample.txt'), 'utf8')).toBe('one\n');
-    await app.close();
+    await close(app);
     app = await launch({
       executablePath: require('electron') as string,
       args: ['apps/desktop'],
@@ -340,7 +371,7 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
       (await page.evaluate((id) => globalThis.window.hikari!.git.changes(id), task.id))[0]?.undone,
     ).toBe(true);
   } finally {
-    await app.close();
+    await close(app);
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await removeDirectory(root, { recursive: true, force: true });
   }
@@ -471,7 +502,7 @@ test('Plan mode prevents writes, persists a plan and carries it into an explicit
     await page.getByLabel('Search tasks').fill('Inspect and plan');
     await expect(page.locator('.task-button')).toHaveCount(1);
   } finally {
-    await app.close();
+    await close(app);
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await removeDirectory(root, { recursive: true, force: true });
   }

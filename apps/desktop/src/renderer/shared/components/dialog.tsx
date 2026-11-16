@@ -29,7 +29,14 @@ export function Dialog({
     return () => {
       dialog.close();
       requestAnimationFrame(() => {
-        if (returnTo?.isConnected && !document.querySelector('dialog[open]')) returnTo.focus();
+        // A delayed frame must not steal focus from a newer user interaction.
+        const active = document.activeElement;
+        if (
+          returnTo?.isConnected &&
+          !document.querySelector('dialog[open]') &&
+          (!active || active === document.body || dialog.contains(active))
+        )
+          returnTo.focus();
       });
     };
   }, []);

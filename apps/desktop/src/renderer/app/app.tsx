@@ -54,18 +54,20 @@ export function App() {
   const { t, locale } = useI18n();
 
   const fileRequest = useRef(0);
-  const { workspace, error, notice, open, tasks, activeId, configured, starting } = useStore(
-    useShallow((state) => ({
-      workspace: state.workspace,
-      error: state.error,
-      notice: state.notice,
-      open: state.open,
-      tasks: state.tasks,
-      activeId: state.activeId,
-      configured: state.configured,
-      starting: state.starting,
-    })),
-  );
+  const { workspace, error, notice, open, tasks, activeId, configured, starting, opening } =
+    useStore(
+      useShallow((state) => ({
+        workspace: state.workspace,
+        error: state.error,
+        notice: state.notice,
+        open: state.open,
+        tasks: state.tasks,
+        activeId: state.activeId,
+        configured: state.configured,
+        starting: state.starting,
+        opening: state.opening,
+      })),
+    );
   const events = useTaskEvents(activeId);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [history, setHistory] = useState(false);
@@ -154,6 +156,7 @@ export function App() {
         .join('');
   const newTask = (section?: string) => {
     const current = useStore.getState();
+    if (current.opening || current.starting) return;
     const selected = current.tasks.find((task) => task.id === current.activeId);
     if (selected && isProjectTask(selected) && current.workspace?.root !== selected.workspace) {
       void current.selectWorkspace(selected.workspace).then((success) => {
@@ -265,7 +268,7 @@ export function App() {
     return off;
   }, []);
   const send = () => {
-    if (starting || importing) return;
+    if (starting || opening || importing) return;
     if (active && !['completed', 'failed', 'cancelled'].includes(active.status)) {
       if (!prompt.trim() || attachments.length) {
         useStore.setState({
@@ -394,6 +397,7 @@ export function App() {
               aria-label={active ? t('Send follow-up') : t('Start task')}
               disabled={
                 starting ||
+                opening ||
                 importing ||
                 (!prompt.trim() && !attachments.length) ||
                 active?.status === 'interrupted'
@@ -460,7 +464,12 @@ export function App() {
           </span>
           hikari
         </div>
-        <Button variant="ghost" className="new-task" onClick={() => newTask()}>
+        <Button
+          variant="ghost"
+          className="new-task"
+          disabled={opening || starting}
+          onClick={() => newTask()}
+        >
           <Plus size={17} />
           {t('New task')}
           <span>⌘ N</span>

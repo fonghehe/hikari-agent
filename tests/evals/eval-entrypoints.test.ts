@@ -7,6 +7,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+const test = it.skipIf(process.platform === 'win32');
 const repository = fileURLToPath(new URL('../..', import.meta.url));
 const loader = createRequire(import.meta.url).resolve('tsx');
 async function run(entry: string, cwd: string, args: string[] = [], loaderPath = loader) {
@@ -70,8 +71,18 @@ it('both evaluation entrypoints provide help and actionable configuration failur
       expect(missing.stderr).toContain('Missing AGENT_MODEL');
       expect(missing.stderr).not.toMatch(/at .*\.ts:\d|EPERM/);
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 20000);
+
+// Restricted graders need sandbox-exec/bubblewrap. Hosted Windows runners do not
+// provide the Linux Docker engine and hikari-sandbox image used by production.
+test('validates all independent graders without running a model', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'hikari-grader-entry-'));
+  try {
     const graders = await run('run.ts', root, ['--validate']);
-    expect(graders.code, graders.stderr).toBe(0);
+    expect(graders.code, graders.stdout + graders.stderr).toBe(0);
     expect(graders.stdout.match(/Oracle validated:/g)).toHaveLength(24);
     expect(graders.stdout).toContain('No agent/model evaluation was performed');
   } finally {
@@ -155,7 +166,7 @@ it('capabilities loads .env, executes tools and writes the selected-case report'
   }
 }, 20000);
 
-it('agent repairs write the same versioned envelope using only the localhost model fixture', async () => {
+test('agent repairs write the same versioned envelope using only the localhost model fixture', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'hikari-agent-entry-'));
   const source =
     'export function subtotal(items) { return items.reduce((total, item) => total + item.price, 0); }\n';

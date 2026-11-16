@@ -405,6 +405,25 @@ test('directory tree expands, collapses, uses keyboard navigation and opens the 
       })) as typeof dialog.showOpenDialog;
     }, directory);
     const page = await wideDesktopWindow(app);
+    // Deliver the project dialog's deferred focus restoration after keyboard
+    // navigation, reproducing a delayed animation frame on a busy native host.
+    await page.evaluate(() => {
+      const request = window.requestAnimationFrame.bind(window);
+      const pending: FrameRequestCallback[] = [];
+      window.requestAnimationFrame = (callback) => {
+        if (document.querySelector('.project-dialog:not([open])')) {
+          pending.push(callback);
+          return request(() => {});
+        }
+        return request(callback);
+      };
+      (window as typeof window & { restoreProjectFocus: () => number }).restoreProjectFocus =
+        () => {
+          window.requestAnimationFrame = request;
+          for (const callback of pending) callback(performance.now());
+          return pending.length;
+        };
+    });
     await addWorkspaceProject(page);
     const tree = page.getByRole('tree', { name: 'File tree' });
     const src = tree.getByRole('treeitem', { name: 'src', exact: true });
@@ -424,6 +443,12 @@ test('directory tree expands, collapses, uses keyboard navigation and opens the 
     await nested.press('ArrowLeft');
     await expect(nested).toHaveAttribute('aria-expanded', 'false');
     await nested.press('ArrowLeft');
+    await expect(src).toBeFocused();
+    expect(
+      await page.evaluate(() =>
+        (window as typeof window & { restoreProjectFocus: () => number }).restoreProjectFocus(),
+      ),
+    ).toBe(1);
     await expect(src).toBeFocused();
     await page.getByRole('button', { name: 'Collapse all', exact: true }).click();
     await expect(src).toHaveAttribute('aria-expanded', 'false');

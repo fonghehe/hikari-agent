@@ -10,6 +10,8 @@ pnpm test:package
 pnpm desktop:dist
 ```
 
+Linux explicitly names its packaged executable `hikari`, matching the smoke-test entry point. The packaged smoke uses OS sandbox execution on macOS/Linux and host process execution on hosted Windows, which does not provision the Linux Docker engine/image. The Windows smoke does not establish Docker sandbox support.
+
 `build.mjs` bundles first-party modules and emits `dist/runtime-dependencies.json` from esbuild's actual external imports. `stage-package.mjs` materializes that runtime dependency closure into an ignored `.artifacts/package/desktop` directory. It resolves native optional packages for the current OS/architecture, preserves licenses, keeps required worker/runtime assets and excludes source maps, tests, examples, debug symbols and PTY prebuilds for other platforms.
 
 `package.mjs` invokes the installed electron-builder from this independent production app. This prevents pnpm workspace detection from reintroducing unused dependencies. The application is stored in asar; native modules and the OCR worker dependency closure are unpacked where runtime loaders require real files. OCR language assets are copied once into resources.

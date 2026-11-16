@@ -8,6 +8,8 @@ pnpm test:package
 pnpm desktop:dist
 ```
 
+Linux 显式将打包后的可执行文件命名为 `hikari`，与冒烟入口保持一致。包冒烟在 macOS/Linux 验证 OS 沙箱执行；托管 Windows 未配置 Linux Docker 引擎与镜像，因此验证宿主机进程执行，不作为 Windows Docker 沙箱可用的证据。
+
 `build.mjs` 根据 esbuild 实际外部导入生成 `dist/runtime-dependencies.json`。`stage-package.mjs` 仅把生产依赖闭包实体化到忽略的 `.artifacts/package/desktop` 目录：保留许可证、OCR/原生资产，排除源码映射、测试、示例、调试符号和其他平台的 PTY 预编译文件。原生可选包按当前平台解析。
 
 `package.mjs` 从独立生产目录调用已安装的 electron-builder，防止 pnpm 工作区探测重新带入无用依赖。应用使用 asar；原生模块和 OCR Worker 的完整依赖闭包按实际运行要求解包，语言数据只复制一次。

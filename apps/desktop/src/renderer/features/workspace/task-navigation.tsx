@@ -226,6 +226,7 @@ export function TaskNavigation({
   const renderTask = (task: Task) => (
     <button
       className={`task-button ${activeId === task.id ? 'selected' : ''}`}
+      disabled={opening || starting}
       key={task.id}
       aria-current={activeId === task.id ? 'page' : undefined}
       data-unread={!!task.navigation?.unread}
