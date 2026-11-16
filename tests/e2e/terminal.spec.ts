@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TerminalSessions } from '../../apps/desktop/src/main/terminal';
+import { TerminalSessions } from '../../apps/desktop/src/main/terminal/terminal';
 import headless from '@xterm/headless';
 test('PTY executes input, resizes and terminates a native shell', async () => {
   let output = '';

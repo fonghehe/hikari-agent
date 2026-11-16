@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { DatabaseSync } from 'node:sqlite';
 import { test, expect, _electron as electron } from '@playwright/test';
 import { imageFixture, pdfFixture, docxFixture } from '../fixtures/attachment-files';
 
@@ -193,9 +194,166 @@ test('real provider receives image/text without workspace; vision error preserve
       page.getByText('Conversation only · open a workspace', { exact: false }),
     ).toBeVisible();
     await expect(page.locator('.global-error')).toHaveCount(0);
-    await page.screenshot({ path: 'test-results/attachment-chat.png', fullPage: true });
+    await page.screenshot({ path: '.artifacts/test-results/attachment-chat.png', fullPage: true });
   } finally {
     await app.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test('indexes attachments, embeds and reranks through approved tools, then reads a current citation', async () => {
+  let chatCalls = 0,
+    embedded = 0,
+    reranked = 0;
+  let citation = '';
+  let observedSource = '';
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    const body = JSON.parse(raw);
+    response.setHeader('Content-Type', 'application/json');
+    if (request.url?.endsWith('/embeddings')) {
+      const inputs = Array.isArray(body.input) ? body.input : [body.input];
+      embedded += inputs.length;
+      response.end(
+        JSON.stringify({
+          data: inputs.map((_input: unknown, index: number) => ({ index, embedding: [1, 0] })),
+        }),
+      );
+      return;
+    }
+    if (request.url === '/rerank') {
+      reranked++;
+      response.end(
+        JSON.stringify({
+          results: body.documents.map((text: string, index: number) => ({
+            index,
+            relevance_score: text.includes('Original receipt required') ? 0.99 : 0.1,
+          })),
+        }),
+      );
+      return;
+    }
+    chatCalls++;
+    let message;
+    if (chatCalls === 1)
+      message = {
+        content: '',
+        tool_calls: [
+          {
+            id: 'search',
+            type: 'function',
+            function: {
+              name: 'search_attachments',
+              arguments: JSON.stringify({ query: 'receipt', limit: 1 }),
+            },
+          },
+        ],
+      };
+    else if (chatCalls === 2) {
+      const result = JSON.parse(
+        body.messages.findLast((item: { role: string }) => item.role === 'tool').content,
+      );
+      citation = result[0].citationId;
+      observedSource = result[0].text;
+      message = {
+        content: '',
+        tool_calls: [
+          {
+            id: 'source',
+            type: 'function',
+            function: {
+              name: 'read_attachment_source',
+              arguments: JSON.stringify({ citationId: citation }),
+            },
+          },
+        ],
+      };
+    } else message = { content: 'Verified receipt policy from policy.md.' };
+    response.end(JSON.stringify({ choices: [{ message }] }));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('No fixture port');
+  const app = await launch();
+  try {
+    const page = await app.firstWindow();
+    await page.evaluate(
+      (base) =>
+        window.hikari!.agent.configure({
+          provider: 'compatible',
+          model: 'fixture',
+          apiKey: '',
+          baseUrl: base + '/v1',
+          streaming: false,
+          embeddings: {
+            enabled: true,
+            model: 'text-embedding-3-small',
+            baseUrl: base + '/v1',
+            apiKey: '',
+          },
+          reranker: {
+            enabled: true,
+            model: 'fixture-reranker',
+            baseUrl: base + '/rerank',
+            apiKey: 'local-test-key',
+          },
+        }),
+      `http://127.0.0.1:${address.port}`,
+    );
+    const filename = path.join(directory, 'policy.md');
+    await writeFile(
+      filename,
+      '# General\n\n' +
+        'Receipt support information. '.repeat(80) +
+        '\n\n# Returns\n\nOriginal receipt required for opened products.',
+    );
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showOpenDialog = (async () => ({
+        canceled: false,
+        filePaths: [filename],
+      })) as typeof dialog.showOpenDialog;
+    }, filename);
+    await page.getByRole('button', { name: 'Attach files or images', exact: true }).click();
+    await expect(page.locator('.composer .attachment-chip')).toHaveCount(1);
+    await page
+      .getByRole('textbox', { name: 'Task prompt', exact: true })
+      .fill('Find the receipt requirement and read the source.');
+    await page.getByRole('button', { name: 'Start task', exact: true }).click();
+    await page.getByRole('button', { name: 'Allow for session', exact: true }).click();
+    await expect(page.locator('[data-event-type="agent.completed"]')).toContainText(
+      'Verified receipt policy',
+    );
+    expect(embedded).toBeGreaterThan(1);
+    expect(reranked).toBe(1);
+    expect(observedSource).toContain('Original receipt required');
+    expect(citation).toMatch(/^[a-f0-9]{64}$/);
+    const publicConfig = await page.evaluate(() => window.hikari!.agent.settings());
+    expect(publicConfig?.reranker?.apiKey).toBe('');
+    await page.locator('.model-label').click();
+    const settings = page.getByRole('dialog', { name: 'Model settings', exact: true });
+    await settings.getByText('Reranking', { exact: true }).click();
+    await expect(settings.getByLabel('Enable reranking', { exact: true })).toBeChecked();
+    await expect(settings.getByLabel('Reranking model', { exact: true })).toHaveValue(
+      'fixture-reranker',
+    );
+    await expect(settings.getByLabel('Reranking API key', { exact: true })).toHaveValue('');
+    await page.screenshot({
+      path: '.artifacts/test-results/rag-model-settings.png',
+      fullPage: true,
+    });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.global-error')).toHaveCount(0);
+  } finally {
+    await app.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+  const db = new DatabaseSync(path.join(directory, 'hakari.sqlite'), { readOnly: true });
+  try {
+    expect(Number(db.prepare('SELECT COUNT(*) AS n FROM rag_chunks').get()!.n)).toBeGreaterThan(1);
+  } finally {
+    db.close();
   }
 });

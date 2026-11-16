@@ -4,9 +4,9 @@ import { createServer } from 'node:http';
 import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
-import { TaskManager } from '../../packages/agent-runtime/src';
-import { runOptionsSchema } from '../../packages/agent-core/src';
+import { LocalPersistence } from '../../apps/desktop/src/main/storage/persistence';
+import { TaskManager } from '../../packages/agent-runtime/src/index';
+import { runOptionsSchema } from '../../packages/agent-core/src/index';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 
@@ -139,7 +139,7 @@ test('projects own their chats across direct switching, follow-ups, search and r
     await expect(betaGroup.locator('.task-button')).toHaveCount(1);
     await expect(chats.locator('.task-button')).toHaveCount(2);
     await expect(page.locator('.global-error')).toHaveCount(0);
-    await page.screenshot({ path: 'test-results/project-navigation.png' });
+    await page.screenshot({ path: '.artifacts/test-results/project-navigation.png' });
   } finally {
     await app.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -263,7 +263,7 @@ test('project editing, removal and file or folder imports preserve history witho
       project.getByRole('button', { name: 'Open project Picked website', exact: true }),
     ).toBeVisible();
     await expect(nav.locator('.project-group')).toHaveCount(2);
-    await page.screenshot({ path: 'test-results/project-management.png' });
+    await page.screenshot({ path: '.artifacts/test-results/project-management.png' });
     await expect(page.locator('.global-error')).toHaveCount(0);
   } finally {
     await app.close();
@@ -337,7 +337,7 @@ test('Codex project rows distinguish same names and expose keyboard-accessible c
     await expect(menu.getByRole('menuitem', { name: '置顶', exact: true })).toBeFocused();
     await page.keyboard.press('ArrowDown');
     await expect(menu.getByRole('menuitem', { name: '编辑', exact: true })).toBeFocused();
-    await page.screenshot({ path: 'test-results/codex-project-context-menu.png' });
+    await page.screenshot({ path: '.artifacts/test-results/codex-project-context-menu.png' });
     await page.keyboard.press('Escape');
     await expect(folder).toBeFocused();
     await folder.press('Shift+F10');

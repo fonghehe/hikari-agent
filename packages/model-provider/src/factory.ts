@@ -6,7 +6,7 @@ import {
   type ModelResponse,
   type Message,
 } from '@hikari/agent-core';
-import { modelConfigSchema, providerCatalog, type ModelConfig } from '@hikari/shared';
+import { modelConfigSchema, providerCatalog, type ModelConfig } from '@hikari/shared/models';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import {
   AIMessage,
@@ -179,6 +179,7 @@ class CapabilityProvider implements ModelProvider {
     request = sanitizeModelRequest(request, [
       this.config.apiKey,
       this.config.embeddings?.apiKey ?? '',
+      this.config.reranker?.apiKey ?? '',
     ]);
     return this.provider.chat({
       ...request,
@@ -189,6 +190,7 @@ class CapabilityProvider implements ModelProvider {
     request = sanitizeModelRequest(request, [
       this.config.apiKey,
       this.config.embeddings?.apiKey ?? '',
+      this.config.reranker?.apiKey ?? '',
     ]);
     const next = { ...request, tools: this.config.supportsTools === false ? [] : request.tools };
     if (this.config.streaming === false) yield await this.provider.chat(next);

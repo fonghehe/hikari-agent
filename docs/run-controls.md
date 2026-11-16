@@ -73,3 +73,7 @@ In **Project chats → Memory & extensions**, edit a saved memory's title, conte
 ## Goals, schedules and history
 
 Persistent goals retain the original resource budget; history can restore code, conversation or both after conflict checks. Scheduled work and remote control use the same execution permissions. See the [platform guide](platform.md) for controls and recovery limits.
+
+## Ticket versus execution turn
+
+In the [Superagent service](superagent.md), a Ticket owns authorized work and an Assignment owns one executor turn. A turn can finish while the Ticket waits for a person or another event. A structured `report_work` handoff releases the executor; a ready result still requires acceptance checks and changed files require human review. Retry creates another assignment with the same mandate and directory. Desktop Resume continues to restore the original checkpoint.

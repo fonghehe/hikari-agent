@@ -7,7 +7,12 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { redact, runOptionsSchema, type Task, type PermissionRequest } from '@hikari/agent-core';
 import { AutomationService, StateStore, FileRunStore, EventBus } from '@hikari/agent-runtime';
-import { InteractiveSession, RemoteControlServer, SessionHost } from '@hikari/agent-host';
+import {
+  InteractiveSession,
+  RemoteControlServer,
+  SessionHost,
+  SuperagentSession,
+} from '@hikari/agent-host';
 import {
   PluginManager,
   TimelineService,
@@ -18,7 +23,8 @@ import {
 } from '@hikari/tools';
 import { LogicalSandboxProvider } from '@hikari/sandbox';
 import { createModelProvider, resolvedModelConfig } from '@hikari/model-provider';
-import { modelConfigSchema } from '../../../packages/shared/src';
+import { retrievalFromEnvironment } from '@hikari/agent-runtime';
+import { modelConfigSchema } from '../../../packages/shared/src/index';
 import type { ExecutionJob } from '../../server/src/execution';
 
 export function platformModel() {
@@ -26,6 +32,7 @@ export function platformModel() {
     throw new Error('Set AGENT_MODEL and provider credentials for real execution');
   return resolvedModelConfig(
     modelConfigSchema.parse({
+      ...retrievalFromEnvironment(),
       provider: process.env.AGENT_PROVIDER ?? 'compatible',
       model: process.env.AGENT_MODEL,
       baseUrl: process.env.AGENT_BASE_URL,
@@ -246,6 +253,7 @@ async function runWorker(signal: AbortSignal, once: boolean) {
         root,
         provider: createModelProvider(model),
         pricing: model,
+        retrieval: { embeddings: model.embeddings, reranker: model.reranker },
         contextWindow: model.contextWindow,
         policy: (request) => {
           const decision = unattendedPolicy(request);
@@ -471,6 +479,7 @@ export async function handlePlatformCommand(action: string | undefined, words: s
         root,
         provider: createModelProvider(config),
         pricing: config,
+        retrieval: { embeddings: config.embeddings, reranker: config.reranker },
         contextWindow: config.contextWindow,
         approve: async (request) => unattendedPolicy(request),
       });
@@ -540,11 +549,13 @@ export async function handlePlatformCommand(action: string | undefined, words: s
       }
       return true;
     }
-    const session = new InteractiveSession({
+    const Session = action === 'serve' ? SuperagentSession : InteractiveSession;
+    const session = new Session({
       modelIdentity: { provider: config.provider, model: config.model, baseUrl: config.baseUrl },
       root,
       provider: createModelProvider(config),
       pricing: config,
+      retrieval: { embeddings: config.embeddings, reranker: config.reranker },
       contextWindow: config.contextWindow,
       policy: action === 'schedule' ? unattendedPolicy : undefined,
     });
@@ -553,18 +564,25 @@ export async function handlePlatformCommand(action: string | undefined, words: s
       action === 'serve'
         ? new RemoteControlServer(session, process.env.HIKARI_REMOTE_TOKEN)
         : undefined;
-    service.recover();
-    if (server) {
-      const info = await server.listen(
-        Number(words[0] ?? 4319),
-        process.env.HIKARI_REMOTE_HOST ?? '127.0.0.1',
-      );
-      console.error(
-        `Hikari Remote: http://${info.host}:${info.port}\nAccess token (keep private): ${info.token}`,
-      );
-    }
+    const supervisorTimer =
+      session instanceof SuperagentSession
+        ? setInterval(() => {
+            void session.tick().catch((error) => console.error(String(error)));
+          }, 1000)
+        : undefined;
     try {
+      service.recover();
+      if (server) {
+        const info = await server.listen(
+          Number(words[0] ?? 4319),
+          process.env.HIKARI_REMOTE_HOST ?? '127.0.0.1',
+        );
+        console.error(
+          `Hikari Remote: http://${info.host}:${info.port}\nAccess token (keep private): ${info.token}`,
+        );
+      }
       while (!controller.signal.aborted) {
+        if (session instanceof SuperagentSession) await session.tick();
         await service.tick(
           async (item) => {
             const task = await session.start(item.prompt, item.options, item.isolated);
@@ -588,6 +606,7 @@ export async function handlePlatformCommand(action: string | undefined, words: s
         await delay(1000, undefined, { signal: controller.signal });
       }
     } finally {
+      clearInterval(supervisorTimer);
       service.close();
       await server?.close();
       await session.close();

@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { BrowserWindow } from 'electron';
 import type { DesktopInvokeChannel, DesktopInvokeHandler } from '@hikari/shared';
-import type { TaskHost } from '../task-host';
-import type { TerminalSessions } from '../terminal';
-import type { LocalPersistence } from '../persistence';
+import type { TaskHost } from '../tasks/task-host';
+import type { TerminalSessions } from '../terminal/terminal';
+import type { LocalPersistence } from '../storage/persistence';
 import { WorkspaceProjects } from '../projects';
 
 export const id = z.string().uuid();

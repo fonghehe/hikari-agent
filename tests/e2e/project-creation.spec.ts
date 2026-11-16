@@ -3,8 +3,8 @@ import { createRequire } from 'node:module';
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
-import { TaskManager } from '../../packages/agent-runtime/src';
+import { LocalPersistence } from '../../apps/desktop/src/main/storage/persistence';
+import { TaskManager } from '../../packages/agent-runtime/src/index';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 
@@ -91,7 +91,7 @@ test('project dialog localizes every source action and keeps the full focus ring
         `${locale.language}: the focus indicator must not be cropped by a scroll container`,
       ).toEqual([]);
       await page.screenshot({
-        path: `test-results/project-dialog-focus-${locale.language}.png`,
+        path: `.artifacts/test-results/project-dialog-focus-${locale.language}.png`,
         scale: 'css',
       });
       await dialog.getByLabel(locale.source, { exact: true }).click();
@@ -101,7 +101,7 @@ test('project dialog localizes every source action and keeps the full focus ring
       const labels = await dialog.locator('button:not(.dialog-close)').allTextContents();
       expect(labels.map((label) => label.trim())).toEqual([...locale.actions]);
       await page.screenshot({
-        path: `test-results/project-dialog-source-${locale.language}.png`,
+        path: `.artifacts/test-results/project-dialog-source-${locale.language}.png`,
         scale: 'css',
       });
       await page.keyboard.press('Escape');
@@ -158,7 +158,7 @@ test('folder selection is staged until creation and cancellation leaves the work
         filePaths: [root],
       })) as typeof dialog.showOpenDialog;
     }, root);
-    await page.screenshot({ path: 'test-results/create-project-selected.png' });
+    await page.screenshot({ path: '.artifacts/test-results/create-project-selected.png' });
     await dialog.getByRole('button', { name: '取消', exact: true }).click();
     await nav.getByRole('button', { name: '新增项目', exact: true }).click();
     await expect(dialog.getByRole('textbox', { name: '项目名称' })).toHaveValue('');
@@ -171,7 +171,7 @@ test('folder selection is staged until creation and cancellation leaves the work
         .locator('h2')
         .evaluate((element) => parseFloat(getComputedStyle(element).fontSize)),
     ).toBeLessThanOrEqual(20);
-    await page.screenshot({ path: 'test-results/create-project-empty.png' });
+    await page.screenshot({ path: '.artifacts/test-results/create-project-empty.png' });
     await dialog.getByRole('button', { name: '添加文件夹', exact: true }).click();
     await dialog.getByRole('button', { name: '移除源文件夹', exact: true }).click();
     await expect(dialog.getByRole('button', { name: '创建项目', exact: true })).toBeDisabled();
@@ -193,7 +193,7 @@ test('folder selection is staged until creation and cancellation leaves the work
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );
-    await page.screenshot({ path: 'test-results/create-project-dark-compact.png' });
+    await page.screenshot({ path: '.artifacts/test-results/create-project-dark-compact.png' });
     await dialog.getByRole('button', { name: '关闭', exact: true }).click();
     await expect(dialog).not.toBeVisible();
   } finally {
@@ -244,7 +244,7 @@ test('project header menu sorts chats and persists sidebar arrangement across re
     await trigger.click();
     const menu = page.getByRole('menu', { name: 'Project list options', exact: true });
     await expect(menu.getByRole('menuitem')).toHaveText(['Organize sidebar', 'Chat sort order']);
-    await page.screenshot({ path: 'test-results/project-header-menu.png' });
+    await page.screenshot({ path: '.artifacts/test-results/project-header-menu.png' });
     await menu.getByRole('menuitem', { name: 'Chat sort order', exact: true }).click();
     await page.getByRole('menuitemradio', { name: 'Manual order', exact: true }).click();
     const secondRow = project.locator('.task-button').filter({ hasText: 'Created second' });
@@ -330,12 +330,12 @@ test('project header menu sorts chats and persists sidebar arrangement across re
     await expect(
       page.getByRole('menuitemradio', { name: '分项目显示', exact: true }),
     ).toHaveAttribute('aria-checked', 'true');
-    await page.screenshot({ path: 'test-results/sidebar-grouping-menu.png' });
+    await page.screenshot({ path: '.artifacts/test-results/sidebar-grouping-menu.png' });
     await page.getByRole('menuitem', { name: '聊天排序方式', exact: true }).hover();
     await expect(
       page.getByRole('menuitemradio', { name: '手动排序', exact: true }),
     ).toHaveAttribute('aria-checked', 'true');
-    await page.screenshot({ path: 'test-results/sidebar-sort-menu.png' });
+    await page.screenshot({ path: '.artifacts/test-results/sidebar-sort-menu.png' });
   } finally {
     await app.close();
     await rm(data, { recursive: true, force: true });

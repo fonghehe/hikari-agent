@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "tsBuildInfoFile": "./.cache/typecheck-tooling.tsbuildinfo"
+  },
+  "include": [
+    "tests/**/*.ts",
+    "scripts/**/*.ts",
+    "*.ts",
+    "apps/*/*.config.ts",
+    "docs/.vitepress/**/*.ts"
+  ]
+}

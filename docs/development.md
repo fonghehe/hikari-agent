@@ -63,13 +63,12 @@ Relevant regressions include `desktop-ipc.test.ts`, `data-path.test.ts`, `persis
 ## Build and package
 
 ```sh
-pnpm --filter @hikari/desktop exec playwright install chromium
 pnpm desktop:pack
 pnpm test:package
 pnpm desktop:dist
 ```
 
-`desktop:pack` creates an application directory; `desktop:dist` creates installers in `apps/desktop/release/`. Both build code, check native modules and prepare browser resources without publishing. esbuild emits CommonJS for main and the attachment Worker, preload is built separately, and Vite builds renderer.
+`desktop:pack` creates an application directory; `desktop:dist` creates installers in `.artifacts/releases/desktop/`. Both build code, check native modules and stage runtime dependencies and OCR assets without publishing. esbuild emits CommonJS for main and the attachment Worker, preload is built separately, and Vite builds renderer.
 
 `test:package` launches the packaged application with an isolated temporary data directory and checks native modules, offline OCR, the bundled browser, terminal and sandbox execution. Verification and release CI both run this check; on Linux use `xvfb-run -a pnpm test:package`. It does not verify production signing, notarization or external model quality.
 
@@ -112,3 +111,29 @@ A tool may opt into `parallelSafe` only for independent filesystem inspection. T
 Presentation updates share a 100 ms persistence buffer, capped at 2,000 pending events per task. Tool boundaries, checkpoints, reads and shutdown flush synchronously. A hard process loss can discard the unflushed presentation tail. Persistence subscriptions are critical: write failures stop execution, are checked before lifecycle side effects, and cannot be hidden by a later successful write. Presentation listener failures remain isolated.
 
 Relevant regressions: `file-persistence-batching`, `resource-scope`, `execution-lifecycle`, `request-traces`, `parallel-reads`, `context-budget` and `agent-control`.
+
+## Reproducible offline benchmarks
+
+Run the existing dependencies without model requests or downloads:
+
+```sh
+node scripts/benchmarks/renderer.mjs 100 30
+TSX_DISABLE_CACHE=1 node --import tsx scripts/benchmarks/runtime.ts
+TSX_DISABLE_CACHE=1 node --import tsx scripts/benchmarks/runtime.ts --ref=a291620
+```
+
+The renderer benchmark instruments an in-memory production profiling bundle of the real UI, using fictional tasks and intercepted requests. It uses installed Chrome by default; `HIKARI_TEST_BROWSER_CHANNEL` selects another installed channel. Editor workers are unused in this scenario. It records App/Timeline renders, commits, p95 commit duration, store notifications and simulated list IPC count/bytes. Run identical task/frame counts on both revisions; repeat with 10, 100 and 1,000 tasks. This is browser renderer evidence, not native Electron IPC latency or live-model performance.
+
+The runtime benchmark warms up five times, measures 30 trace appends and 10 skill queries, and prints p50/p95. `--ref` loads only the trace append implementation from that Git revision; skill discovery always uses the working tree. Compare metadata discovery, compatibility `list()` and selected-body loading using 100 fictional 60 KB skills. Trace sizes are 20,000 and 400,000 characters with 16 retained records. It excludes persistence I/O.
+
+A local macOS arm64 sample (Node 24.14.1, Chrome 156): with 100 tasks and 2,000 history events, 240 background deltas caused App/Timeline renders and commits to change from 30 each to zero. A synchronous 240-state-event burst changed list calls from 240 to one (78,229,920 to 325,958 simulated snapshot bytes). Foreground delta commit p95 was 4.2 ms before and 4.4 ms after; no foreground latency improvement is claimed. At 6.4 MB retained traces, append p95 was 14.66 ms before and 14.93 ms after; one redundant encoding was removed, but this sample does not establish a speed gain. Keep OS, browser, runtime, input, budgets and warmup fixed when comparing. Unit/fixture checks, real-model runs and remote three-OS CI are separate evidence.
+
+## Superagent verification
+
+`pnpm exec vitest run tests/runtime/superagent.test.ts tests/integration/superagent-host.test.ts` checks admission, rule observation, mandate revalidation, subscriptions, unread-input preservation, structured handoffs, directory reuse and recovery. `pnpm exec playwright test tests/e2e/superagent.spec.ts` verifies the real supervision page with a local scripted provider. Tests open loopback fixture servers and use temporary projects; they do not contact paid models or publish results. See [design and limits](superagent.md).
+
+## Shared application execution
+
+All real desktop, CLI and worker requests now use `prepareAgentSession`, including work authorization, intent, layered memory and current project-source retrieval. The desktop supplies native interaction/storage adapters. See [the capability audit](architecture-upgrade.md), [packaging](packaging.md) and [API verification](provider-api-audit.md).
+
+See [Agent reliability, evaluation and delivery](agent-readiness.md) for crash-safe transaction locks, recovery adapters, memory approvals, task benchmarks and accounting boundaries.

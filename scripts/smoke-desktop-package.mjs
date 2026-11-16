@@ -1,3 +1,4 @@
+import { desktopRelease, testResults } from './lib/artifacts.mjs';
 import { _electron as electron, expect } from '@playwright/test';
 import { mkdtemp, rm, access, writeFile, mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -12,10 +13,10 @@ const { pdfFixture, docxFixture, imageFixture } = await tsImport(
 
 const defaultExecutable =
   process.platform === 'darwin'
-    ? `apps/desktop/release/${process.arch === 'x64' ? 'mac' : `mac-${process.arch}`}/Hikari.app/Contents/MacOS/Hikari`
+    ? `${desktopRelease}/${process.arch === 'x64' ? 'mac' : `mac-${process.arch}`}/Hikari.app/Contents/MacOS/Hikari`
     : process.platform === 'win32'
-      ? `apps/desktop/release/${process.arch === 'x64' ? 'win-unpacked' : `win-${process.arch}-unpacked`}/Hikari.exe`
-      : `apps/desktop/release/${process.arch === 'x64' ? 'linux-unpacked' : `linux-${process.arch}-unpacked`}/hikari`;
+      ? `${desktopRelease}/${process.arch === 'x64' ? 'win-unpacked' : `win-${process.arch}-unpacked`}/Hikari.exe`
+      : `${desktopRelease}/${process.arch === 'x64' ? 'linux-unpacked' : `linux-${process.arch}-unpacked`}/hikari`;
 const executablePath = path.resolve(process.argv[2] ?? defaultExecutable);
 await access(executablePath);
 const directory = await mkdtemp(path.join(tmpdir(), 'hikari-package-smoke-'));
@@ -58,7 +59,12 @@ try {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: files });
   }, files);
   await page.getByRole('button', { name: 'Attach files or images', exact: true }).click();
-  await expect(page.locator('.composer .attachment-chip')).toHaveCount(3);
+  try {
+    await expect(page.locator('.composer .attachment-chip')).toHaveCount(3);
+  } catch (error) {
+    console.error('Packaged attachment diagnostics:', await page.locator('body').innerText());
+    throw error;
+  }
   await page.getByRole('button', { name: 'Preview design.png', exact: true }).click();
   await expect(page.locator('.attachment-full-image')).toBeVisible();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
@@ -123,6 +129,10 @@ try {
   expect(recognized.text).toContain('12345');
 
   const runtimeRoot = path.join(directory, 'runtime-workspace');
+  // The fixture has no credentials. Avoid opening a native keychain consent dialog during automated packaging tests.
+  await app.evaluate(({ safeStorage }) => {
+    safeStorage.isEncryptionAvailable = () => false;
+  });
   await mkdir(runtimeRoot);
   let endpoint;
   server = createServer(async (req, res) => {
@@ -234,9 +244,9 @@ try {
     'sandbox verified',
   );
   await expect(page.locator('.global-error')).toHaveCount(0);
-  await page.screenshot({ path: 'test-results/packaged-app.png' });
+  await page.screenshot({ path: path.join(testResults, 'packaged-app.png') });
   console.log(
-    'Packaged Hikari: icon, secure IPC, offline Q&A, attachments, actual offline OCR, bundled Chromium without cache, OS sandbox execution, acceptance, theme and native PTY passed.',
+    'Packaged Hikari: icon, secure IPC, offline Q&A, attachments, actual offline OCR, isolated Electron browser with empty cache, OS sandbox execution, acceptance, theme and native PTY passed.',
   );
 } finally {
   if (app) await app.close();

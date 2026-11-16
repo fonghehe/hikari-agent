@@ -2,7 +2,7 @@
 
 ## Open a desktop release
 
-Choose a release for your operating system and processor. If you received a locally built release, its files are in `apps/desktop/release/`.
+Choose a release for your operating system and processor. If you received a locally built release, its files are in `.artifacts/releases/desktop/`.
 
 On macOS, open the Hikari DMG, drag **Hikari** into **Applications**, then launch it from Applications. Alternatively, extract the ZIP and move Hikari.app to Applications.
 
@@ -19,7 +19,7 @@ pnpm install
 pnpm dev
 ```
 
-For real project tasks, make **Git** and **ripgrep** available on your computer. Browser tools also need Chromium:
+For real project tasks, make **Git** and **ripgrep** available. Desktop browser tools reuse Electron and need no additional browser. CLI/browser-test environments can install Playwright Chromium with:
 
 ```sh
 pnpm exec playwright install chromium

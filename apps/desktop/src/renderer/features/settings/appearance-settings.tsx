@@ -1,0 +1,65 @@
+import { Dialog } from '../../shared/components/dialog';
+import { Monitor, Moon, Sun } from 'lucide-react';
+import { usePreferences } from '../../shared/preferences';
+import { useI18n } from '../../shared/i18n/index';
+import { perform } from '../../app/store';
+export function AppearanceSettings({ close }: { close(): void }) {
+  const { t } = useI18n();
+  const { theme, language, saving, save } = usePreferences();
+  return (
+    <Dialog title={t('Appearance & language')} close={close} className="appearance-modal">
+      <p>
+        {t(
+          'Make this workspace feel like yours. Changes apply immediately and are saved on this device.',
+        )}
+      </p>
+      <h3>{t('Theme')}</h3>
+      <div className="theme-options" role="group" aria-label={t('Theme')}>
+        {(
+          [
+            ['dark', Moon, 'Dark'],
+            ['light', Sun, 'Light'],
+            ['system', Monitor, 'System'],
+          ] as const
+        ).map(([value, Icon, label]) => (
+          <button
+            key={value}
+            aria-pressed={theme === value}
+            disabled={saving}
+            onClick={() => void perform(() => save({ theme: value, language }))}
+          >
+            <span className={`theme-preview preview-${value}`}>
+              <i />
+              <i />
+              <i />
+            </span>
+            <span>
+              <Icon size={15} />
+              {t(label)}
+            </span>
+          </button>
+        ))}
+      </div>
+      <label>
+        {t('Language')}
+        <select
+          aria-label={t('Language')}
+          value={language}
+          disabled={saving}
+          onChange={(event) =>
+            void perform(() => save({ theme, language: event.target.value as typeof language }))
+          }
+        >
+          <option value="en">English</option>
+          <option value="zh-CN">简体中文</option>
+          <option value="ja">日本語</option>
+        </select>
+      </label>
+      <p className="muted">
+        {t(
+          'Language changes the interface. Your conversations, file names and tool output stay as written.',
+        )}
+      </p>
+    </Dialog>
+  );
+}

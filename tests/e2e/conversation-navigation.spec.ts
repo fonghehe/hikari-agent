@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, realpath, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
-import { TaskManager } from '../../packages/agent-runtime/src';
+import { LocalPersistence } from '../../apps/desktop/src/main/storage/persistence';
+import { TaskManager } from '../../packages/agent-runtime/src/index';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 
@@ -212,7 +212,7 @@ test('settings tabs keep a stable window, scroll internally and use the selected
         after.y > before.y ? after.y - before.bottom : after.x - before.right,
       ).toBeGreaterThanOrEqual(8);
     }
-    await page.screenshot({ path: 'test-results/settings-data-spacing.png' });
+    await page.screenshot({ path: '.artifacts/test-results/settings-data-spacing.png' });
     await globalSettings.getByRole('button', { name: '关闭', exact: true }).click();
     await page.getByRole('button', { name: '记忆与扩展', exact: true }).click();
     await settings.getByRole('tab', { name: '扩展', exact: true }).click();
@@ -232,7 +232,7 @@ test('settings tabs keep a stable window, scroll internally and use the selected
         .getByRole('tablist')
         .evaluate((element) => element.getBoundingClientRect().top),
     ).toBeGreaterThan(bounds!.y);
-    await page.screenshot({ path: 'test-results/settings-stable-tabs.png' });
+    await page.screenshot({ path: '.artifacts/test-results/settings-stable-tabs.png' });
     await settings.getByRole('button', { name: '关闭', exact: true }).click();
     await page.evaluate(() => window.hikari!.preferences.set({ theme: 'light', language: 'ja' }));
     await page.reload();
@@ -343,7 +343,7 @@ test('section controls edit, mark read, archive, create empty sections and remov
     ).toBe(true);
     await open('Empty');
     await expect(menu.getByRole('menuitem', { name: 'Archive chats', exact: true })).toBeDisabled();
-    await page.screenshot({ path: 'test-results/section-menu.png' });
+    await page.screenshot({ path: '.artifacts/test-results/section-menu.png' });
     await expect(page.locator('.global-error')).toHaveCount(0);
   } finally {
     await app.close();

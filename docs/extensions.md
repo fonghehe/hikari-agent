@@ -64,3 +64,5 @@ Skill tool restrictions still apply during the task. Loading a Skill does not gr
 ## Plugin packages and language servers
 
 Plugins can bundle Skills, MCP servers, approved lifecycle hooks, agent roles and language-server settings. See [automation and integrations](platform.md) for installation, pinned registries and LSP configuration.
+
+Hikari discovers runtime skills in `.agent/skills`, not the development assistants’ `.agents/skills` or `.continue/skills`. Listing reads metadata; the selected body is loaded on demand. Invalid entries are reported separately and duplicate names cannot be loaded ambiguously. Local discovery considers up to 100 sorted skill directories; each `SKILL.md` is limited to 64 KB. There is no cross-query cache: additions, edits and removals are checked again on the next query. Skill limits stay local to the task that loaded them and persist across Resume; a child also inherits the parent’s existing limits.

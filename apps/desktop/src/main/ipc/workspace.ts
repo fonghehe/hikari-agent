@@ -5,7 +5,7 @@ import { RepositoryIndexer } from '@hikari/tools';
 import { demoWorkspace } from '@hikari/model-provider';
 import { openWorkspace, readWorkspaceFile } from '../workspace';
 import { WorkspaceProjects } from '../projects';
-import { SidebarSections } from '../sidebar-sections';
+import { SidebarSections } from '../tasks/sidebar-sections';
 import { id, type DesktopContext, type RegisterHandler } from './context';
 
 export function registerWorkspaceHandlers(handle: RegisterHandler, context: DesktopContext) {

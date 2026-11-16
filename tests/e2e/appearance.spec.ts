@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { test, expect, _electron as electron } from '@playwright/test';
-import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
-import { TaskManager } from '../../packages/agent-runtime/src';
+import { LocalPersistence } from '../../apps/desktop/src/main/storage/persistence';
+import { TaskManager } from '../../packages/agent-runtime/src/index';
 import { wideDesktopWindow, openWorkspaceTool, addWorkspaceProject } from './desktop-window';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
@@ -116,7 +116,7 @@ test('sidebar lists projects directly with one settings entry and room for task 
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByRole('button', { name: 'Task history', exact: true }).click();
     await expect(page.locator('.history-row')).toHaveCount(25);
-    await page.screenshot({ path: 'test-results/sidebar-consolidated.png' });
+    await page.screenshot({ path: '.artifacts/test-results/sidebar-consolidated.png' });
   } finally {
     await app.close();
   }
@@ -139,12 +139,12 @@ test('scrolling stays on panel edges at wide and narrow desktop sizes', async ()
       2,
     );
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1480, 760));
-    await page.screenshot({ path: 'test-results/hikari-dark-desktop.png' });
+    await page.screenshot({ path: '.artifacts/test-results/hikari-dark-desktop.png' });
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.getByRole('button', { name: 'Appearance & language', exact: true }).click();
     await page.getByRole('button', { name: 'Light', exact: true }).click();
     await page.getByRole('button', { name: 'Close', exact: true }).click();
-    await page.screenshot({ path: 'test-results/hikari-light-desktop.png' });
+    await page.screenshot({ path: '.artifacts/test-results/hikari-light-desktop.png' });
     for (let index = 0; index < 25; index++) {
       await page.evaluate((index) => window.hikari!.agent.start(`Layout fixture ${index}`), index);
     }
@@ -165,7 +165,7 @@ test('scrolling stays on panel edges at wide and narrow desktop sizes', async ()
       element.scrollTop = element.scrollHeight;
     });
     await expect(page.getByRole('button', { name: 'Start task', exact: true })).toBeInViewport();
-    await page.screenshot({ path: 'test-results/hikari-narrow.png' });
+    await page.screenshot({ path: '.artifacts/test-results/hikari-narrow.png' });
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
@@ -185,7 +185,7 @@ test('appearance and three interface languages apply immediately and survive res
     await page.getByLabel('Language', { exact: true }).selectOption('zh-CN');
     await expect(page.getByRole('dialog', { name: '外观与语言' })).toBeVisible();
     await expect(page.getByRole('button', { name: '新建任务', exact: false })).toBeVisible();
-    await page.screenshot({ path: 'test-results/appearance-light-zh.png' });
+    await page.screenshot({ path: '.artifacts/test-results/appearance-light-zh.png' });
     await page.getByLabel('语言', { exact: true }).selectOption('ja');
     await expect(page.getByRole('dialog', { name: '外観と言語' })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
@@ -208,7 +208,7 @@ test('appearance and three interface languages apply immediately and survive res
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await page.getByRole('button', { name: 'Dark', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await page.screenshot({ path: 'test-results/appearance-dark-en.png' });
+    await page.screenshot({ path: '.artifacts/test-results/appearance-dark-en.png' });
     expect(await page.evaluate(() => window.hikari!.preferences.get())).toEqual({
       theme: 'dark',
       language: 'en',
@@ -266,7 +266,7 @@ test('conversation starts with minimal controls and opens optional tools only on
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       ).toBe(true);
-      await page.screenshot({ path: `test-results/minimal-workspace-${width}.png` });
+      await page.screenshot({ path: `.artifacts/test-results/minimal-workspace-${width}.png` });
     }
     await expect(page.locator('.global-error')).toHaveCount(0);
   } finally {
@@ -374,12 +374,12 @@ test('long workspace names and task titles keep controls separated at compact wi
           }),
         )
         .toBe(true);
-      await page.screenshot({ path: `test-results/spacing-options-${width}.png` });
+      await page.screenshot({ path: `.artifacts/test-results/spacing-options-${width}.png` });
       await page.keyboard.press('Escape');
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       ).toBe(true);
-      await page.screenshot({ path: `test-results/spacing-conversation-${width}.png` });
+      await page.screenshot({ path: `.artifacts/test-results/spacing-conversation-${width}.png` });
       await page.getByRole('button', { name: /^New task ⌘ N$/ }).click();
     }
   } finally {
@@ -446,7 +446,7 @@ test('directory tree expands, collapses, uses keyboard navigation and opens the 
     await page.getByRole('button', { name: 'Light', exact: true }).click();
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(page.locator('.monaco-editor')).toHaveClass(/\bvs\b/);
-    await page.screenshot({ path: 'test-results/tree-light.png' });
+    await page.screenshot({ path: '.artifacts/test-results/tree-light.png' });
     await expect(page.locator('.global-error')).toHaveCount(0);
   } finally {
     await app.close();

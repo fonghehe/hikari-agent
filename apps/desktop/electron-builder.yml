@@ -1,7 +1,8 @@
 appId: dev.hikari.agent
 productName: Hikari
 directories:
-  output: release
+  app: ../../.artifacts/package/desktop
+  output: ../../.artifacts/releases/desktop
   buildResources: resources
 files:
   - dist/**/*
@@ -9,14 +10,18 @@ files:
   - '!**/*.map'
 asar: true
 asarUnpack:
-  - '**/node_modules/**'
+  - '**/*.node'
+  - '**/node-pty/**'
+  - '**/sharp*/**'
+  - '**/@img/**'
+  - '**/@napi-rs/**'
+  - '**/tesseract.js*/**'
+  - '**/pdfjs-dist/**'
 extraResources:
   - from: resources/icons
     to: icons
   - from: resources/ocr
     to: ocr
-  - from: resources/browser
-    to: browser
 # All native dependencies use Node-API and are checked inside Electron before packing.
 # node-pty names its prebuild pty.node; electron-rebuild does not recognize it and
 # unnecessarily recompiles it against downloaded Electron headers.

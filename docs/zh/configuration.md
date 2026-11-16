@@ -57,3 +57,11 @@
 ## 离线使用
 
 **使用离线演示** 可在没有模型和工作区时体验示例问答，已有演示对话继续和重试仍是模拟。连接 Ollama 或 LM Studio 可离线使用真实本地模型，能力取决于所选模型。
+
+## 可选检索重排
+
+模型设置新增独立的 **检索重排**，默认关闭。填写模型、完整接口地址（如 `http://localhost:8000/rerank`）和可选密钥。接口接收 `POST {model, query, documents: string[], top_n}`，返回覆盖全部候选的 `{results: [{index, relevance_score}]}`。仅允许 HTTPS 或本机 HTTP，拒绝重定向；默认超时 15 秒，响应上限 2 MB。失败时明确降级到融合排名。密钥沿用模型配置的安全存储，不返回渲染进程。重排可独立于 Embedding 启用，二者都会发送参考文本，费用不计入聊天预算。
+
+## 共享应用执行
+
+普通桌面、CLI 与 Worker 请求现均通过 `prepareAgentSession` 接入授权、意图、分层记忆与当前源码检索。桌面保留原生交互和存储适配。参见[整项目能力盘点](architecture-upgrade.md)、[打包](packaging.md)及 [API 核实](provider-api-audit.md)。

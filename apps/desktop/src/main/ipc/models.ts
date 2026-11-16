@@ -1,4 +1,4 @@
-import { secureStorageAvailable, purgeWeakCredentials } from '../secret-storage';
+import { secureStorageAvailable, purgeWeakCredentials } from '../storage/secret-storage';
 import { createHash } from 'node:crypto';
 import { safeStorage } from 'electron';
 import { z } from 'zod';
@@ -62,6 +62,7 @@ export function registerModelsHandlers(handle: RegisterHandler, context: Desktop
     ...config,
     apiKey: '',
     embeddings: config.embeddings ? { ...config.embeddings, apiKey: '' } : undefined,
+    reranker: config.reranker ? { ...config.reranker, apiKey: '' } : undefined,
   });
   handle('agent:configure', (config) => {
     const next = modelConfigSchema.parse(config);
@@ -81,6 +82,13 @@ export function registerModelsHandlers(handle: RegisterHandler, context: Desktop
       old.embeddings.baseUrl === next.embeddings.baseUrl
     )
       next.embeddings.apiKey = old.embeddings.apiKey;
+    if (
+      next.reranker &&
+      !next.reranker.apiKey &&
+      old?.reranker?.model === next.reranker.model &&
+      old.reranker.baseUrl === next.reranker.baseUrl
+    )
+      next.reranker.apiKey = old.reranker.apiKey;
     if (!host.profiles.has(key) && host.profiles.size >= 30)
       throw new Error('At most 30 model profiles are supported');
     host.config = resolvedModelConfig({ ...next, profileId: key });

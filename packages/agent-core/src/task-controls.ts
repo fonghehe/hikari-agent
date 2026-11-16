@@ -98,6 +98,20 @@ export const runSummarySchema = z.object({
   cachedInputTokens: z.number().nonnegative().optional(),
   cacheWriteInputTokens: z.number().nonnegative().optional(),
   costUsd: z.number().nonnegative().optional(),
+  costCoverage: z.enum(['model-only', 'partial']).optional(),
+  activeDurationMs: z.number().nonnegative().optional(),
+  attention: z
+    .object({
+      questions: z.number().int().nonnegative(),
+      approvals: z.number().int().nonnegative(),
+      denials: z.number().int().nonnegative(),
+      interventions: z.number().int().nonnegative(),
+      waitingMs: z.number().nonnegative(),
+      inputWaitMs: z.number().nonnegative(),
+      permissionWaitMs: z.number().nonnegative(),
+      pausedMs: z.number().nonnegative(),
+    })
+    .optional(),
   verification: z
     .object({
       passed: z.boolean(),
@@ -108,6 +122,22 @@ export const runSummarySchema = z.object({
     .optional(),
 });
 export type RunSummary = z.infer<typeof runSummarySchema>;
+
+export interface TaskDelivery {
+  generatedAt: string;
+  verification: 'verified' | 'not-required' | 'unverified' | 'failed';
+  artifacts: {
+    kind: 'file' | 'answer' | 'url';
+    locator: string;
+    label: string;
+    state: 'recorded' | 'unavailable' | 'unverified';
+    sha256?: string;
+  }[];
+  evidence: VerificationReport['checks'];
+  unfinished: string[];
+  limitations: string[];
+  humanAction?: { kind: 'answer' | 'review' | 'resume' | 'inspect'; label: string; taskId: string };
+}
 
 // A fixed capability set rather than a prompt-only promise. New tools default to excluded.
 export const planningTools: ReadonlySet<string> = new Set([
@@ -131,7 +161,24 @@ export const planningTools: ReadonlySet<string> = new Set([
   'update_plan',
   'update_task_summary',
   'ask_user',
+  'report_work',
+  'hand_back',
+  'follow_thread',
+  'read_source_event',
+  'search_project',
+  'search_project_local',
+  'index_project',
+  'read_project_source',
+  'route_intent',
+  'update_working_memory',
+  'operation_status',
   'search_memory',
+  'search_memory_local',
+  'search_attachments_local',
+  'get_memory_index_status',
+  'get_attachments_index_status',
+  'read_memory_source',
+  'read_attachment_source',
   'search_attachments',
   'read_attachment',
   'update_goal',

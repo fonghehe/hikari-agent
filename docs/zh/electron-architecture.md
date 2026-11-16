@@ -75,3 +75,11 @@ SQLite 使用同步接口；展示事件会短暂合并写入，执行边界与�
 ## 共享执行宿主
 
 `packages/agent-host` 将现有运行时、工具、权限、MCP 和 Skills 组合为 CLI 与执行节点宿主。桌面端继续负责附件及界面持久化，通过 `prepareCapabilities` 共用委派、Hooks、LSP 和历史能力。`ipc/platform.ts` 验证计划、插件、配置与恢复请求。远程 HTTP 适配器只暴露明确选择的项目；API 服务负责节点注册与持久执行租约，不接管本地模型密钥。
+
+## Superagent 控制层
+
+CLI `serve` 将 `SuperagentEngine`、`SuperagentSession` 与原 `SessionHost` 组合。契约在 `agent-core`，引擎原子提交工单、不可变授权、决定、策略历史和外部操作意图；协调器没有工作区工具。执行器继续接受沙箱与验收约束，每次派工对应已保存的 Task。桌面对话仍由 `TaskHost` 直接控制。参见[架构取舍](superagent.md#架构取舍与边界)。
+
+## 共享应用执行
+
+普通桌面、CLI 与 Worker 请求现均通过 `prepareAgentSession` 接入授权、意图、分层记忆与当前源码检索。桌面保留原生交互和存储适配。参见[整项目能力盘点](architecture-upgrade.md)、[打包](packaging.md)及 [API 核实](provider-api-audit.md)。

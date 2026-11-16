@@ -12,6 +12,6 @@
     "@hikari/skills": "workspace:*",
     "@hikari/tools": "workspace:*",
     "@hikari/sandbox": "workspace:*",
-    "zod": "^3.25.0"
+    "zod": "catalog:"
   }
 }

@@ -11,6 +11,7 @@
     "pnpm-lock.yaml",
     "playwright-report",
     "test-results",
-    "AGENTS.md"
+    "AGENTS.md",
+    ".artifacts/**"
   ]
 }

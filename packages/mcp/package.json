@@ -8,8 +8,8 @@
     "@hikari/agent-core": "workspace:*",
     "@hikari/agent-runtime": "workspace:*",
     "@hikari/sandbox": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.25.0",
-    "zod": "^3.25.0",
-    "ajv": "^8.17.1"
+    "@modelcontextprotocol/sdk": "catalog:",
+    "ajv": "catalog:",
+    "zod": "catalog:"
   }
 }

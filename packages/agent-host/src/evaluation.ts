@@ -30,6 +30,12 @@ export const repositorySuiteSchema = z
           setup: z.array(evaluationCommandSchema).max(5).default([]),
           setupNetwork: z.boolean().default(false),
           grader: evaluationCommandSchema,
+          expectedBaseline: z
+            .object({
+              exitCode: z.number().int().min(1).max(255),
+              outputIncludes: z.array(z.string().min(1).max(2000)).min(1).max(20),
+            })
+            .optional(),
           allowedPaths: z.array(relativeFile).min(1).max(200),
           preservePaths: z.array(relativeFile).min(1).max(200),
         }),

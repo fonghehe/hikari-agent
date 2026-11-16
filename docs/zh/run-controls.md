@@ -73,3 +73,7 @@ macOS 使用原生沙箱，Linux 需安装 bubblewrap。Windows 需安装 Docker
 ## 持续目标、定时执行与历史恢复
 
 持续目标沿用原有预算；历史检查点可在冲突检查后恢复代码、对话或二者。定时任务和远程操作仍遵循同一套执行权限。操作入口和恢复限制见[自动化与开发集成](platform.md)。
+
+## 工单与执行轮次
+
+[Superagent 服务](superagent.md)用 Ticket 表示获授权工作，用 Assignment 表示一轮执行。执行轮次完成后，工单仍可能等待人或事件。`report_work` 结构化交接释放执行器；ready 仍需验收，有文件变更时要求审阅。Retry 使用同一授权和目录创建新派工。桌面 Resume 仍恢复原任务检查点。

@@ -73,3 +73,11 @@ SQLite は同期 API を使います。表示用イベントは短いバッチ�
 ## 共通の実行ホスト
 
 `packages/agent-host` は既存の実行基盤・ツール・権限・MCP・Skills を組み合わせ、CLI とワーカーで使用します。デスクトップは添付資料と UI の保存を引き続き担当し、`prepareCapabilities` で委任・フック・LSP・履歴を共用します。`ipc/platform.ts` は予定・プラグイン・設定・復元を検証します。リモート HTTP は選択したプロジェクトだけを公開し、API サービスはノード登録と永続リースを管理します。ローカルのモデルキーは受け取りません。
+
+## Superagent 制御層
+
+CLI `serve` は `SuperagentEngine`、`SuperagentSession` と既存 `SessionHost` を組み合わせます。契約は `agent-core` に置き、エンジンが Ticket、不変の Mandate、判断、Policy 履歴、外部操作の意図を一括保存します。ルーターに作業ツールはなく、実行器は既存のサンドボックスと検証を使用します。Assignment ごとに保存された Task を対応付けます。デスクトップは `TaskHost` を維持します。[設計判断と範囲](superagent.md#設計判断と現在の範囲)を参照してください。
+
+## 共有実行
+
+通常のデスクトップ・CLI・Worker は `prepareAgentSession` で認可、意図、記憶と現在のソース検索を共有します。デスクトップはネイティブ UI と保存のアダプターです。[能力一覧](architecture-upgrade.md)、[パッケージ](packaging.md)、[API 監査](provider-api-audit.md)を参照してください。

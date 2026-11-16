@@ -102,3 +102,17 @@ EVAL_REPOSITORY_SUITE=/absolute/path/to/suite.json EVAL_SAMPLES=3 pnpm eval:repo
 `.agent/evals/*-repository/` 保存报告、脱敏任务记录和补丁。报告包含基线与最终验收退出码、提交、使用量、耗时、越界改动及保留文件检查。缺少模型配置时会明确失败；受控模型的入口测试不能作为真实模型成功率。
 
 允许路径检查覆盖 Git 跟踪文件和未被忽略的新文件，跳过平台私有目录 `.agent`；它不会对依赖目录及其他忽略文件做完整性扫描。将验收所依赖的测试与配置显式列入 `preservePaths`，并审阅最终补丁。
+
+三个入口统一输出带版本号的报告，包含 `suite`、`workflow`、`case`/`name`、证据类型、有效性、耗时、摘要与产物引用。成功率和最小样本数仅计算有效尝试；环境、供应商、运行框架或验收器故障记录为无效尝试，全部无效时评测失败。Agent 耗尽预算或行为错误仍作为有效失败计分。`eval:report` 拒绝未分类的旧报告，以及同一套件/用例的配置、输入或环境指纹不一致的报告。指纹覆盖非敏感模型配置、预算、框架源码、输入、运行时及依赖，不包含凭据。
+
+仓库基线必须有断言失败证据，或独立输出一行 `HIKARI_EVAL_RESULT {"status":"fail"}` 并以非零码退出，或匹配用例中的明确约定 `expectedBaseline: {"exitCode":1,"outputIncludes":["specific defect message"]}`。结构化验收器用 `"pass"` 配合退出码 0、`"fail"` 配合非零退出码，用 `"invalid"` 表示证据不可用。仅有依赖缺失、准备失败、语法错误或任意非零退出码不能证明缺陷复现。基线已确认可用后，Agent 修改引入的语法、导入或运行错误计为修复失败。断言输出无法识别时，优先采用结构化结果或具体的基线约定。环境指纹用于受控比较，并不证明所有外部可变依赖完全相同。
+
+## 持久检索与重排
+
+CLI、本地 Host 和 Worker 的项目记忆共用 `.agent/runs/knowledge.sqlite`。外部服务默认关闭。本地进程可设置 `AGENT_EMBEDDING_MODEL`、`AGENT_EMBEDDING_URL`（Embedding 基础地址）、`AGENT_EMBEDDING_API_KEY`、可选 `AGENT_EMBEDDING_REVISION`；`AGENT_EMBEDDINGS=false` 关闭。重排配置为 `AGENT_RERANK_MODEL`、`AGENT_RERANK_URL`（完整 POST 地址）、`AGENT_RERANK_API_KEY`、可选 `AGENT_RERANK_TIMEOUT_MS`（1000–60000）；`AGENT_RERANK_ENABLED=false` 关闭。凭据只来自本机配置，远程任务不能传入；无人值守联网策略仍生效。
+
+`index_memory` 预建索引，`get_memory_index_status` 查看状态，`read_memory_source` 回读当前引用；配置远程服务后仍有 `search_memory_local` 可供只读阶段使用。以上是模型工具，不是新增 CLI 子命令。`pnpm eval:retrieval` 无需密钥即可运行离线合成关键词回归。协议和限制见 [模型设置](configuration.md) 与 [检索说明](memory-and-storage.md)。
+
+## Superagent 服务
+
+`pnpm agent serve 4319` 新增 [Superagent 任务协调](superagent.md)。通过页面接收授权工单、检查 observe 决策、回答问题并审阅成果。`/api/superagent/*` 提供授权审计流程；原 `/api/tasks` 和桌面远程适配器保留直接任务兼容行为。

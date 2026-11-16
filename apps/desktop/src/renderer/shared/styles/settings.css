@@ -1,0 +1,357 @@
+.project-context-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.project-context-menu button:disabled:hover {
+  background: transparent;
+}
+.project-context-menu .danger {
+  color: var(--danger);
+}
+.task-button[data-unread='true'] .task-title {
+  font-weight: 650;
+}
+.task-button[data-unread='true'] .task-title::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+.workspace-settings {
+  width: min(760px, calc(100vw - 48px));
+  height: min(720px, calc(100dvh - 48px));
+}
+.workspace-settings .dialog-body {
+  flex: 1;
+  overflow: hidden;
+  padding: 0 24px 20px;
+  gap: var(--space-3);
+}
+.settings-tabs {
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+}
+.settings-tabs button {
+  min-height: var(--control-height);
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: var(--font-caption);
+  line-height: 18px;
+  white-space: normal;
+  text-align: left;
+}
+.settings-tabs button[aria-selected='true'] {
+  color: var(--text-primary);
+  background: var(--accent-soft);
+}
+.settings-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 2px 6px 4px 2px;
+  scroll-padding-block: 12px;
+}
+.settings-panel > * {
+  flex-shrink: 0;
+}
+.settings-panel[hidden] {
+  display: none !important;
+}
+.settings-panel h3,
+.settings-panel p,
+.settings-panel form,
+.settings-panel details {
+  margin: 0;
+}
+.settings-panel p {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.settings-panel .settings-section + .settings-section {
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.settings-panel .platform-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.settings-panel .platform-settings details {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.settings-panel .platform-settings details[open] > summary {
+  margin-bottom: 14px;
+}
+.settings-panel .platform-settings details > p,
+.settings-panel .platform-settings details > form,
+.settings-panel .platform-settings details > article,
+.settings-panel .platform-settings details > .actions {
+  margin-top: 12px;
+}
+.settings-panel .platform-settings form {
+  gap: 12px;
+}
+.settings-panel .actions,
+.confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.confirmation-dialog {
+  width: min(460px, calc(100vw - 48px));
+}
+.confirmation-dialog p {
+  margin: 0;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.confirmation-actions {
+  justify-content: flex-end;
+}
+.share-dialog {
+  width: min(680px, calc(100vw - 48px));
+}
+.share-dialog textarea {
+  min-height: 240px !important;
+  max-height: 45vh;
+  resize: vertical;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.settings-actions > .button {
+  margin: 0;
+}
+.section-heading {
+  position: relative;
+}
+.section-heading .history-entry {
+  opacity: 0;
+}
+.section-heading:hover .history-entry,
+.section-heading:focus-within .history-entry {
+  opacity: 1;
+}
+@media (hover: none) {
+  .section-heading .history-entry {
+    opacity: 1;
+  }
+}
+
+/* Shared sizing applies to native fields across the app, panels and dialogs. */
+.app-dialog .dialog-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  width: 100%;
+  align-items: flex-start;
+}
+.sync-panel form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.sync-panel form > label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+}
+.sync-panel form > label:has(input[type='checkbox']) {
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+}
+.settings-panel {
+  container-type: inline-size;
+}
+.settings-panel .platform-settings details > :not(summary) {
+  margin-top: 14px;
+}
+.remote-connection-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.settings-panel .platform-settings .checkbox-label {
+  gap: 8px;
+}
+.settings-panel .platform-settings article:not(.memory-entry) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+@container (min-width: 560px) {
+  .settings-panel .platform-settings form,
+  .app-dialog .settings-panel > form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 12px 24px;
+  }
+  .settings-panel form > label:has(textarea),
+  .settings-panel form > label:has(input[type='url']),
+  .settings-panel form > label:has(input[type='password']),
+  .settings-panel form > .field-wide,
+  .settings-panel form > .checkbox-label,
+  .settings-panel form > .actions,
+  .settings-panel form > .button {
+    grid-column: 1 / -1;
+  }
+  .settings-panel form > .button {
+    justify-self: start;
+  }
+}
+.section-toggle {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+}
+.section-toggle > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.section-toggle > svg {
+  flex-shrink: 0;
+  transition: transform var(--motion-feedback) ease;
+}
+.section-toggle > svg.expanded {
+  transform: rotate(90deg);
+}
+.composer-section {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 160px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.composer-section > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.composer-section > svg {
+  flex-shrink: 0;
+}
+
+.settings-panel > .button {
+  align-self: flex-start;
+}
+.conversation-project-tools {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+.conversation-project-settings {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+}
+.conversation-project-settings:hover {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+.conversation-project-settings svg {
+  flex-shrink: 0;
+}
+.conversation-project-settings span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.project-settings-context {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  flex-shrink: 0;
+}
+.project-settings-context strong {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+.project-settings-context span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sync-dialog {
+  width: min(620px, calc(100vw - 48px));
+}
+.sync-dialog .sync-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.sync-dialog .sync-panel > h3 {
+  display: none;
+}
+.sync-dialog .sync-panel form {
+  width: 100%;
+}
+.sync-dialog .sync-panel p {
+  margin: 0;
+}

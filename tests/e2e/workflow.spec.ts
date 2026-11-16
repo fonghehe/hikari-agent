@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { GitService } from '../../packages/git/src';
+import { GitService } from '../../packages/git/src/index';
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 test('desktop runs the development graph through real tools and verification, then manages and exports history', async () => {
   test.setTimeout(60000);

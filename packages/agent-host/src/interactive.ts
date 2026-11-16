@@ -5,7 +5,7 @@ import type {
   Task,
   UserQuestion,
 } from '@hikari/agent-core';
-import { SessionHost, type SessionHostOptions } from './index';
+import { SessionHost, type SessionHostOptions } from './session-host';
 import type { ControlAdapter } from './remote';
 
 export class InteractiveSession implements ControlAdapter {

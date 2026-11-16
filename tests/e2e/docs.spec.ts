@@ -123,6 +123,12 @@ for (const guide of guides) {
       'electron-architecture',
       'development',
       'memory-and-storage',
+      'platform',
+      'superagent',
+      'architecture-upgrade',
+      'packaging',
+      'provider-api-audit',
+      'agent-readiness',
     ]) {
       const response = await request.get(
         `${url}${guide.prefix}/${route === 'index' ? '' : route + '.html'}`,
@@ -130,9 +136,7 @@ for (const guide of guides) {
       expect(response.ok()).toBe(true);
       const html = await response.text();
       expect(html).toContain(`lang="${guide.lang}"`);
-      expect(html).not.toMatch(
-        /product-requirements|href="[^"]*\/(?:progress|backend|packaging)\.html/i,
-      );
+      expect(html).not.toMatch(/product-requirements|href="[^"]*\/(?:progress|backend)\.html/i);
     }
     await page.goto(`${url}${guide.prefix}/`);
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute(
@@ -158,7 +162,10 @@ for (const guide of guides) {
       page.getByRole('heading', { name: new RegExp(`^${guide.appearance}`) }),
     ).toBeVisible();
     await expect(page.locator('.VPSidebarItem.is-active')).toContainText(guide.appearance);
-    await page.screenshot({ path: `test-results/hikari-docs-${guide.lang}.png`, fullPage: true });
+    await page.screenshot({
+      path: `.artifacts/test-results/hikari-docs-${guide.lang}.png`,
+      fullPage: true,
+    });
 
     await page.setViewportSize({ width: 390, height: 844 });
     const navigation = page.getByRole('button', { name: guide.navigation, exact: true });
@@ -199,7 +206,7 @@ for (const guide of guides) {
       true,
     );
     await page.screenshot({
-      path: `test-results/hikari-docs-mobile-${guide.lang}.png`,
+      path: `.artifacts/test-results/hikari-docs-mobile-${guide.lang}.png`,
       fullPage: true,
     });
 
@@ -222,7 +229,9 @@ for (const guide of guides) {
     ).toBeVisible();
     await expect(page.locator('.VPSidebarItem.is-active')).toContainText(guide.architecture);
     await expect(page.locator('.vp-doc')).toContainText('ipc/router.ts');
-    await page.screenshot({ path: `test-results/hikari-docs-architecture-${guide.lang}.png` });
+    await page.screenshot({
+      path: `.artifacts/test-results/hikari-docs-architecture-${guide.lang}.png`,
+    });
     await page.getByRole('button', { name: guide.languageMenu, exact: true }).hover();
     await page
       .locator('.VPNavBarTranslations')

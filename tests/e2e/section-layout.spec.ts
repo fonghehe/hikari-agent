@@ -4,8 +4,8 @@ import { createServer } from 'node:http';
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
-import { TaskManager } from '../../packages/agent-runtime/src';
+import { LocalPersistence } from '../../apps/desktop/src/main/storage/persistence';
+import { TaskManager } from '../../packages/agent-runtime/src/index';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 
@@ -135,7 +135,7 @@ test('custom sections lead the sidebar, remember collapse and own new chats and 
       'Unsectioned question',
     );
     await expect(page.locator('.global-error')).toHaveCount(0);
-    await page.screenshot({ path: 'test-results/sidebar-top-sections.png' });
+    await page.screenshot({ path: '.artifacts/test-results/sidebar-top-sections.png' });
   } finally {
     await app.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -180,7 +180,7 @@ test('remote controls have separation and native fields use shared widths across
     expect(label!.y - paragraph!.y - paragraph!.height).toBeGreaterThanOrEqual(12);
     expect(button!.y - label!.y - label!.height).toBeGreaterThanOrEqual(14);
     expect(await settings.boundingBox()).toEqual(initialBounds);
-    await page.screenshot({ path: 'test-results/remote-control-spacing.png' });
+    await page.screenshot({ path: '.artifacts/test-results/remote-control-spacing.png' });
     await settings.getByText('定时任务', { exact: true }).click();
     const schedule = settings
       .locator('details')
@@ -198,7 +198,7 @@ test('remote controls have separation and native fields use shared widths across
     expect(
       (await settings.getByLabel('连接方式', { exact: true }).boundingBox())!.width,
     ).toBeLessThan(300);
-    await page.screenshot({ path: 'test-results/settings-content-widths.png' });
+    await page.screenshot({ path: '.artifacts/test-results/settings-content-widths.png' });
     await settings.getByRole('button', { name: '关闭', exact: true }).click();
     await page.getByRole('button', { name: '任务选项', exact: true }).click();
     const options = page.getByRole('dialog', { name: '任务选项', exact: true });

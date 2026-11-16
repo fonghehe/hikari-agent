@@ -2,7 +2,7 @@
 
 ## 打开桌面发行版
 
-选择与你的操作系统和处理器匹配的发行版。本地生成的发行文件位于 `apps/desktop/release/`。
+选择与你的操作系统和处理器匹配的发行版。本地生成的发行文件位于 `.artifacts/releases/desktop/`。
 
 macOS 上打开 Hikari DMG，将 **Hikari** 拖入 **Applications（应用程序）**，再从应用程序启动。也可解压 ZIP，将 Hikari.app 移入应用程序。
 
@@ -19,7 +19,7 @@ pnpm install
 pnpm dev
 ```
 
-真实项目任务需要电脑上可用的 **Git** 与 **ripgrep**。浏览器工具还需 Chromium：
+真实项目任务需要 **Git** 与 **ripgrep**。桌面浏览器复用 Electron，无需另装浏览器；CLI 或浏览器测试环境可安装 Playwright Chromium：
 
 ```sh
 pnpm exec playwright install chromium

@@ -102,3 +102,17 @@ EVAL_REPOSITORY_SUITE=/absolute/path/to/suite.json EVAL_SAMPLES=3 pnpm eval:repo
 `.agent/evals/*-repository/` にレポート、機密情報を除去したタスク記録、差分を保存します。コミット、修正前後の終了コード、使用量、所要時間、許可外の変更と保存対象の検査結果を確認できます。モデル設定がなければ明示的に失敗します。制御されたモデルによる接続テストは、実モデルの成功率を示しません。
 
 パス検査は Git の追跡ファイルと無視対象ではない新規ファイルを確認し、私有データ `.agent` は除外します。依存ディレクトリや他の無視ファイルの完全性は走査しません。検証に使うテストと設定を `preservePaths` に明示し、最終差分も確認してください。
+
+三つの入口は、バージョン付きの共通レポート形式で `suite`、`workflow`、`case`/`name`、証拠種別、有効性、所要時間、要約、成果物を記録します。成功率と最小サンプル数には有効な試行だけを含め、環境・プロバイダー・実行基盤・検証器の障害は無効として残します。すべて無効なら評価は失敗します。Agent の予算超過や動作上の誤りは採点対象の失敗です。`eval:report` は未分類の旧レポートや、同じスイート/ケースで設定・入力・環境の指紋が異なるレポートを拒否します。指紋には秘密でないモデル設定、予算、ソース、入力、実行環境、依存関係を含め、認証情報は含めません。
+
+リポジトリのベースラインは、アサーション失敗、非ゼロ終了と単独行 `HIKARI_EVAL_RESULT {"status":"fail"}`、またはケースの明示的な契約 `expectedBaseline: {"exitCode":1,"outputIncludes":["specific defect message"]}` との一致が必要です。構造化検証器は成功を `"pass"` と終了コード 0、動作の失敗を `"fail"` と非ゼロ終了、使用不能な証拠を `"invalid"` で示します。依存不足、準備失敗、構文エラーや任意の非ゼロ終了だけでは不具合の再現を証明しません。正常な基盤を持つベースラインの確認後に Agent の編集で発生した構文・インポート・実行エラーは修正の失敗として採点します。既存のアサーション出力を認識できなければ、構造化結果か具体的な基準契約を使ってください。環境の指紋は比較用で、すべての外部依存の同一性を保証しません。
+
+## 永続検索と再ランキング
+
+CLI / Host / Worker の記憶索引はプロジェクトごとの `.agent/runs/knowledge.sqlite` です。外部サービスは既定で無効です。ローカルで `AGENT_EMBEDDING_MODEL`、`AGENT_EMBEDDING_URL`、`AGENT_EMBEDDING_API_KEY`、任意の `AGENT_EMBEDDING_REVISION` を設定します。`AGENT_EMBEDDINGS=false` で無効化できます。再ランキングは `AGENT_RERANK_MODEL`、完全 URL の `AGENT_RERANK_URL`、`AGENT_RERANK_API_KEY`、任意の `AGENT_RERANK_TIMEOUT_MS`（1000–60000）を使用し、`AGENT_RERANK_ENABLED=false` で無効化します。リモートジョブから認証情報は受け取りません。無人実行の通信許可は引き続き適用します。
+
+`index_memory`、`get_memory_index_status`、`read_memory_source` はモデル用ツールです。読み取り専用段階では `search_memory_local` を使えます。新しい CLI サブコマンドではありません。`pnpm eval:retrieval` は認証不要の合成語句回帰です。[設定](configuration.md) と [検索の制限](memory-and-storage.md) を参照してください。
+
+## Superagent サービス
+
+`pnpm agent serve 4319` は [Superagent の監督](superagent.md)を提供します。ページから認可された作業を送り、observe の判断、質問、レビューを扱います。`/api/superagent/*` は監査付きのフローです。既存 `/api/tasks` とデスクトップのリモート操作は直接実行との互換性を維持します。

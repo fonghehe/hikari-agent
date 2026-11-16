@@ -1,31 +1,28 @@
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { prepareEvaluation } from './config';
+import { classifyTask, evidenceEnvelope, invalid, type EvidenceResult } from './evidence';
 import {
   redact,
   runOptionsSchema,
   type ModelProvider,
   type Task,
-} from '../../packages/agent-core/src';
+} from '../../packages/agent-core/src/index';
 import {
-  AgentRunner,
-  ContextManager,
   EventBus,
   FileRunStore,
-  MemoryManager,
   TaskManager,
   ToolRegistry,
-} from '../../packages/agent-runtime/src';
-import { createModelProvider } from '../../packages/model-provider/src';
-import { NativeSandboxProvider } from '../../packages/sandbox/src';
-import {
-  FileChangeService,
-  registerFileTools,
-  registerGitTools,
-  registerBrowserTools,
-} from '../../packages/tools/src';
+  ResourceScope,
+  StateStore,
+  type RunnerDependencies,
+} from '../../packages/agent-runtime/src/index';
+import { createModelProvider } from '../../packages/model-provider/src/index';
+import { PermissionManager } from '../../packages/sandbox/src/index';
+import { FileChangeService } from '../../packages/tools/src/index';
+import { prepareAgentSession } from '../../packages/agent-host/src/index';
 
 const names = [
   'plan-is-read-only',
@@ -39,35 +36,57 @@ const { config, maxTokens } = settings;
 const output = path.join(process.cwd(), '.agent', 'evals', `${Date.now()}-capabilities`);
 await mkdir(output, { recursive: true, mode: 0o700 });
 const tasks = new TaskManager();
-const results: { name: string; passed: boolean; detail: string; durationMs: number }[] = [];
+const results: (EvidenceResult & {
+  name: string;
+  detail: string;
+  artifact?: string;
+  summary?: Task['runSummary'];
+  status?: Task['status'];
+})[] = [];
 const selected = settings.selected;
-function setup(task: Task, provider = createModelProvider(config), store?: FileRunStore) {
+const disposers: (() => Promise<void>)[] = [];
+async function setup(
+  task: Task,
+  provider = createModelProvider(config),
+  store = new FileRunStore(task.workspace),
+  extra: Pick<RunnerDependencies, 'restored' | 'requestUser' | 'verify'> = {},
+) {
   const events = new EventBus(task),
-    tools = new ToolRegistry();
-  const changes = new FileChangeService(task.workspace, events);
-  registerFileTools(tools, new NativeSandboxProvider(task.workspace, false), changes);
-  registerGitTools(tools, changes);
-  return {
+    tools = new ToolRegistry(),
+    resources = new ResourceScope();
+  events.subscribe((event) => store.recordTask(task, event), { critical: true });
+  disposers.push(async () => {
+    await resources.close();
+    store.close();
+  });
+  const prepared = await prepareAgentSession({
+    task,
     tasks,
     events,
     tools,
     provider,
-    permissions: { check: async () => true },
-    context: new ContextManager(
-      'You are Hikari. Use tools to inspect actual state, obey the requested mode, preserve user files, and report only verified outcomes.',
-      (config.contextWindow ?? 64000) - (config.maxOutputTokens ?? 4096),
+    resources,
+    changes: new FileChangeService(task.workspace, events),
+    permissions: new PermissionManager(events, async (request) =>
+      ['shell.execute', 'git.write', 'browser.access'].includes(request.permission)
+        ? 'once'
+        : 'deny',
     ),
-    memory: new MemoryManager(),
     checkpoints: store,
+    memoryStore: store,
+    controlStore: new StateStore(task.workspace),
     pricing: config,
-  };
+    contextWindow: config.contextWindow,
+    ...extra,
+  });
+  return { ...prepared, events };
 }
 async function probe(
   name: string,
   action: (root: string) => Promise<{ task: Task; passed: boolean; detail: string }>,
 ) {
   if (selected && !selected.includes(name)) return;
-  const root = await mkdtemp(path.join(tmpdir(), 'hikari-capability-'));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'hikari-capability-')));
   const started = Date.now();
   console.log(`Running ${name} with ${config.provider}/${config.model}…`);
   try {
@@ -77,20 +96,35 @@ async function probe(
       JSON.stringify(redact(result.task), null, 2),
       { mode: 0o600 },
     );
+    const classification = classifyTask(result.task);
     results.push({
       name,
-      passed: result.passed,
+      case: name,
+      ...classification,
+      failureKind:
+        classification.validity === 'invalid'
+          ? classification.failureKind
+          : !result.passed
+            ? 'agent'
+            : undefined,
+      passed: result.passed && classification.validity === 'valid',
+      summary: result.task.runSummary,
+      status: result.task.status,
+      artifact: `${name}.json`,
       detail: result.detail,
       durationMs: Date.now() - started,
     });
   } catch (error) {
     results.push({
       name,
+      case: name,
+      ...invalid('harness', 'Capability fixture or verifier failed'),
       passed: false,
       detail: String(redact(String(error))),
       durationMs: Date.now() - started,
     });
   } finally {
+    for (const dispose of disposers.splice(0).reverse()) await dispose();
     await rm(root, { recursive: true, force: true });
   }
   console.log(`${name}: ${results.at(-1)!.passed ? 'PASS' : 'FAIL'} ${results.at(-1)!.detail}`);
@@ -104,11 +138,12 @@ await probe('plan-is-read-only', async (root) => {
   );
   task.runOptions = runOptionsSchema.parse({
     mode: 'plan',
+    workflow: settings.workflow,
     maxSteps: 15,
     maxTokens,
     maxDurationMs: 120000,
   });
-  await new AgentRunner(task, setup(task)).run();
+  await (await setup(task)).runner.run();
   const unchanged = (await readFile(path.join(root, 'add.mjs'), 'utf8')) === source;
   const mutated = task.events.some(
     (event) =>
@@ -120,7 +155,7 @@ await probe('plan-is-read-only', async (root) => {
   return {
     task,
     passed,
-    detail: `status=${task.status}; plan=${task.plan?.steps.length ?? 0}; unchanged=${unchanged}; mutation=${mutated}`,
+    detail: `status=${task.status}; stop=${task.runSummary?.stopReason}; plan=${task.plan?.steps.length ?? 0}; unchanged=${unchanged}; mutation=${mutated}`,
   };
 });
 await probe('cancel-live-model-stream', async (root) => {
@@ -130,6 +165,7 @@ await probe('cancel-live-model-stream', async (root) => {
     root,
   );
   task.runOptions = runOptionsSchema.parse({
+    workflow: settings.workflow,
     maxSteps: 10,
     maxTokens,
     maxDurationMs: 60000,
@@ -151,7 +187,7 @@ await probe('cancel-live-model-stream', async (root) => {
       }
     },
   };
-  const runner = new AgentRunner(task, setup(task, provider));
+  const runner = (await setup(task, provider)).runner;
   await runner.run();
   const wrote = task.events.some((event) => event.type === 'file.changed');
   const elapsed = cancelledAt ? Date.now() - cancelledAt : Infinity;
@@ -168,6 +204,7 @@ await probe('resume-after-uncertain-side-effect', async (root) => {
     root,
   );
   task.runOptions = runOptionsSchema.parse({
+    workflow: settings.workflow,
     maxSteps: 30,
     maxTokens,
     maxDurationMs: 180000,
@@ -188,7 +225,7 @@ await probe('resume-after-uncertain-side-effect', async (root) => {
   });
   const store = new FileRunStore(root);
   store.saveTask(task);
-  const first = setup(task, createModelProvider(config), store);
+  const first = await setup(task, createModelProvider(config), store);
   let interrupted = false;
   first.events.subscribe((event) => {
     store.saveTask(task);
@@ -197,7 +234,7 @@ await probe('resume-after-uncertain-side-effect', async (root) => {
       runner.interrupt();
     }
   });
-  const runner = new AgentRunner(task, first);
+  const runner = first.runner;
   await runner.run();
   const checkpoint = new FileRunStore(root).load(task.id);
   const before = await readFile(path.join(root, 'journal.txt'), 'utf8');
@@ -207,16 +244,15 @@ await probe('resume-after-uncertain-side-effect', async (root) => {
       passed: false,
       detail: `interrupt=${interrupted}; status=${task.status}; sideEffect=${JSON.stringify(before)}`,
     };
-  const resumed = setup(task, createModelProvider(config), store);
   let confirmations = 0;
-  await new AgentRunner(task, {
-    ...resumed,
+  const resumed = await setup(task, createModelProvider(config), store, {
     restored: checkpoint,
     requestUser: async () => {
       confirmations++;
       return 'Inspect actual state and continue. The append may have already succeeded; never repeat it blindly.';
     },
-  }).run();
+  });
+  await resumed.runner.run();
   const after = await readFile(path.join(root, 'journal.txt'), 'utf8');
   return {
     task,
@@ -249,16 +285,15 @@ await probe('browser-observe-and-interact', async (root) => {
     root,
   );
   task.runOptions = runOptionsSchema.parse({
+    workflow: settings.workflow,
     maxSteps: 20,
     maxTokens,
     maxDurationMs: 120000,
     requireTests: false,
   });
-  const deps = setup(task),
-    browser = registerBrowserTools(deps.tools, deps.events, false);
+  let browser: Awaited<ReturnType<typeof setup>>['browser'] | undefined;
   try {
-    await new AgentRunner(task, {
-      ...deps,
+    const prepared = await setup(task, createModelProvider(config), undefined, {
       verify: async () => {
         const observed = task.events.some(
           (event) =>
@@ -276,7 +311,9 @@ await probe('browser-observe-and-interact', async (root) => {
           ],
         };
       },
-    }).run();
+    });
+    browser = prepared.browser;
+    await prepared.runner.run();
     const observed = task.events.some(
       (event) =>
         event.type === 'tool.completed' && String(event.data.output).includes('Verified 42'),
@@ -287,24 +324,29 @@ await probe('browser-observe-and-interact', async (root) => {
       detail: `status=${task.status}; buttonTriggered=${submitted}; observedHeading=${observed}`,
     };
   } finally {
-    await browser.close();
+    await browser?.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
-await writeFile(
-  path.join(output, 'report.json'),
-  JSON.stringify(
-    {
-      provider: config.provider,
-      model: config.model,
-      createdAt: new Date().toISOString(),
-      limits: { maxTokens, maxOutputTokens: config.maxOutputTokens ?? 4096 },
-      results,
+const report = await evidenceEnvelope({
+  suite: 'capabilities',
+  evidence: 'model-run',
+  config,
+  workflow: settings.workflow,
+  limits: {
+    maxTokens,
+    maxOutputTokens: config.maxOutputTokens ?? 4096,
+    caseLimits: {
+      'plan-is-read-only': [15, 120000],
+      'cancel-live-model-stream': [10, 60000],
+      'resume-after-uncertain-side-effect': [30, 180000],
+      'browser-observe-and-interact': [20, 120000],
     },
-    null,
-    2,
-  ),
-  { mode: 0o600 },
-);
+  },
+  inputs: Object.fromEntries(settings.selected.map((name) => [name, { name, fixtureVersion: 1 }])),
+  artifacts: results.flatMap((result) => (result.artifact ? [result.artifact] : [])),
+  results,
+});
+await writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2), { mode: 0o600 });
 console.log(`Capability report: ${output}`);
-if (results.some((result) => !result.passed)) process.exitCode = 1;
+if (!report.passed) process.exitCode = 1;

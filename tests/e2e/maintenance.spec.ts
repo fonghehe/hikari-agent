@@ -5,8 +5,8 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
-import { TaskManager } from '../../packages/agent-runtime/src';
+import { LocalPersistence } from '../../apps/desktop/src/main/storage/persistence';
+import { TaskManager } from '../../packages/agent-runtime/src/index';
 
 test('data settings back up, export private-free diagnostics, stage/cancel restore and prune archived tasks', async () => {
   const data = await mkdtemp(path.join(tmpdir(), 'hikari-maintenance-ui-'));

@@ -94,7 +94,7 @@ test('quick suggestions use the selected language for connected and offline agen
           );
         }
         await page.screenshot({
-          path: `test-results/presets-${item.language}-${demo ? 'demo' : 'connected'}.png`,
+          path: `.artifacts/test-results/presets-${item.language}-${demo ? 'demo' : 'connected'}.png`,
         });
       }
   } finally {
@@ -248,7 +248,7 @@ test('all dialogs share dismissal, focus, spacing and bounded scrolling', async 
           );
         }),
       ).toBe(true);
-      await page.screenshot({ path: `test-results/shared-dialog-${width}.png` });
+      await page.screenshot({ path: `.artifacts/test-results/shared-dialog-${width}.png` });
       await page.keyboard.press('Escape');
     }
     await expect(page.locator('.global-error')).toHaveCount(0);

@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
+import { LocalPersistence } from '../../apps/desktop/src/main/storage/persistence';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 

@@ -56,24 +56,26 @@ Memories and model-written summaries are reference data. They can be stale or wr
 
 ## Retrieval paths
 
-Repository search and document RAG are separate. `RepositoryIndexer`, ripgrep and `search_code` discover files, match text and rank relevant paths. Hikari does not automatically embed the entire repository.
+Repository search (`RepositoryIndexer`, ripgrep, `search_code`) remains separate and does not automatically embed the repository.
 
-Attachment chunks and saved memory use `packages/agent-runtime/src/retrieval.ts`:
+Desktop attachments and project memory now use persistent SQLite tables: `rag_chunks`, `rag_vectors`, `rag_search`, `rag_status`, `rag_source_tombstones`. CLI/worker memory uses `.agent/runs/knowledge.sqlite`. Old `messages/vectors:<scope>` records remain a compatibility cache. The index is private, excluded from conversation sync and included in desktop database backups. CLI indexes need a separate backup or rebuild.
 
-1. Normalized term matching works without an embedding endpoint.
-2. With embeddings enabled, missing document vectors are computed in batches of 32. SHA-256 cache keys include endpoint, model and text, so changed content invalidates old vectors.
-3. A query vector is compared by cosine similarity. Semantic candidates must exceed 0.15.
-4. Reciprocal rank fusion combines lexical and semantic ranks and returns top results with source metadata. `search_memory` defaults to 8 entries and accepts 1–20.
+- New attachments split along headings/paragraphs, targeting 1,800 UTF-16 characters with 180-character overlap. Bounded fenced blocks stay intact. These are character limits, not Token counts. Labels/headings are bounded; offsets refer to sanitized text (page-local for PDF). Older attachments keep their saved chunks.
+- First search or explicit `index_attachments` / `index_memory` builds a snapshot. Embeddings are optional; missing document vectors are computed in batches of 32 and reused by endpoint, model, optional revision and content. Change revision when a provider changes a model under the same name.
+- Publication is atomic and generation-checked. Failed/cancelled builds retain the old snapshot, but a changed-corpus search fails instead of returning the old corpus. Current sources are rechecked after provider calls. Source deletions invalidate indexed copies and in-flight publications. Interrupted builds retry on the next explicit index/search; upload does not automatically initiate background network processing.
+- Persistent lexical retrieval uses FTS5/BM25 with normalized terms and CJK bigrams. The no-store compatibility route uses substring term scoring. Semantic retrieval performs exact cosine search with threshold 0.15. RRF (constant 60) fuses the rankings, with 40 candidates by default.
+- Optional HTTP model reranking processes candidates before final top-k. Failures carry `rerank: fallback` / `RERANK_UNAVAILABLE`; cancellation still cancels. `score` is the fusion score and `rerankScore` is provider-specific, neither is calibrated confidence.
+- Results have stable scope-bound `citationId` values. `read_attachment_source` / `read_memory_source` reject changed, deleted, expired or out-of-scope sources. `read_attachment` reads adjacent chunks by index. The default 24,000-character serialized output budget includes metadata and JSON escaping; truncation is marked.
 
-LangChain supplies Retriever, Document and OpenAI Embeddings interfaces; ranking is implemented in project code. This is not BM25, an ANN index or a reranker pipeline. Initial memory selection uses the separate keyword scorer in `memory.ts`, which favors title matches.
+`get_attachments_index_status` / `get_memory_index_status` report build state and active snapshots. Attachment search defaults to 6 results (1–12), memory to 8 (1–20). Initial memory selection still uses the separate title-weighted scoring in `memory.ts`.
 
 ## Efficiency and accuracy
 
-Semantic collections are capped at 2,000 chunks and 3 million characters. Each scope caches at most 2,000 vectors. Caching avoids repeated document embedding, but similarity still scans candidates linearly and each query is embedded again. Larger knowledge bases need measured indexing and retrieval evaluation.
+Semantic collections remain bounded to 2,000 chunks / 3 million characters. Vector comparison is linear, queries are re-embedded each time, and this backend has no ANN index. Provider calls are asynchronous, but local SQLite reads/publication are synchronous. Larger workloads require measurements and a dedicated backend evaluation.
 
-There is no fixed accuracy guarantee. Use representative questions and labeled sources to measure Recall@k, MRR and source hit rate, alongside cold/warm latency and embedding request counts. Verify retrieved claims with files and tools. Reduce irrelevant chunks, preserve sources and retire stale facts before simply raising result limits.
+Embedding/reranking sends sanitized queries/reference text to configured endpoints under network permission; charges are separate from chat budgets. When enabled, the main search tools require network permission. Additional `search_attachments_local` / `search_memory_local` tools provide keyword-only access even in read-only workflow stages. Embedding failures are errors; reranker failures explicitly fall back.
 
-Semantic search sends the query and candidate document or memory text to the configured embedding endpoint, subject to network approval. Its cost is separate from the chat budget. Keyword retrieval remains available when embeddings are disabled. Endpoint failures and dimension changes produce errors rather than pretending semantic retrieval succeeded. See [Model settings](configuration.md).
+`pnpm eval:retrieval` runs 20 synthetic multilingual keyword cases with Recall@3, MRR@3, no-answer accuracy and latency. This is not a live-model quality benchmark. Validate real-provider recall, ranking, citations, cold/warm latency and costs using representative documents and labelled sources.
 
 ## Backup, restore and diagnostics
 
@@ -100,3 +102,15 @@ Before calling a model adapter, the runtime records its prepared provider-neutra
 CLI/worker records use `.agent/runs/requests-<task-id>.json`; desktop records use the private `tool_calls` key `requests:<task-id>`. Each task retains at most 16 records and approximately 8 MB. An individually oversized request keeps metadata and a hash with `omitted: size-limit`, instead of duplicating its input or failing the task. Deleting desktop task outputs also deletes its request records.
 
 Compaction preserves bounded observation heads/tails and saved-result references; it does not replace evidence with an invented semantic summary. Full recovery messages remain unchanged. The latest complete tool exchange and durable task summary keep their existing priority. Provider-reported cached input and cache-write tokens are recorded when available; unavailable values remain absent. Monetary estimates continue to use the configured input/output unit prices and do not infer cache discounts.
+
+Expired memories remain available for review until capacity is needed. When inserting a new fact into a full 100-entry scope, Hikari removes expired entries in that scope before checking capacity again. Active facts and other project scopes are preserved. Medium tool logs that are compacted can also be archived as task-local paged results, retaining a reference and bounded diagnostic text without rerunning the original operation.
+
+## Superagent records
+
+The CLI service stores its policy versions, source events, admission decisions, tickets, input delivery/read markers, assignments, local notices and queued side-effect intents in `.agent/state/superagent.json`. It uses the existing atomic StateStore and a project ownership lease. Executor Tasks/checkpoints remain in `.agent/runs/`. The file is private source data with a 16 MB bound; see [recovery and storage limits](superagent.md#execution-and-recovery). This storage is independent of desktop SQLite task history.
+
+## Shared application execution
+
+All real desktop, CLI and worker requests now use `prepareAgentSession`, including work authorization, intent, layered memory and current project-source retrieval. The desktop supplies native interaction/storage adapters. See [the capability audit](architecture-upgrade.md), [packaging](packaging.md) and [API verification](provider-api-audit.md).
+
+See [Agent reliability, evaluation and delivery](agent-readiness.md) for crash-safe transaction locks, recovery adapters, memory approvals, task benchmarks and accounting boundaries.

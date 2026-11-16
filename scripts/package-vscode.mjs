@@ -1,3 +1,4 @@
+import { vscodeRelease } from './lib/artifacts.mjs';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { deflateRawSync } from 'node:zlib';
 import path from 'node:path';
@@ -75,7 +76,7 @@ end.writeUInt16LE(files.length, 8);
 end.writeUInt16LE(files.length, 10);
 end.writeUInt32LE(directory.length, 12);
 end.writeUInt32LE(offset, 16);
-const output = path.join(root, 'release', `${manifest.name}-${manifest.version}.vsix`);
+const output = path.join(vscodeRelease, `${manifest.name}-${manifest.version}.vsix`);
 await mkdir(path.dirname(output), { recursive: true });
 await writeFile(output, Buffer.concat([...local, directory, end]));
 console.log(output);

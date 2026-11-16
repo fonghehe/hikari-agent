@@ -178,7 +178,7 @@ The goal stays in private checkpoints. Before reporting completion, the model mu
 
 Desktop, CLI, workers, writable delegated agents and timeline restoration share workspace ownership records. One executor may hold a directory at a time; separate worktrees can run independently. Opening another host preserves history owned by a live process. Completion and setup failure release the claim. A later task can reclaim a dead process's claim, but never automatically replays its work.
 
-Ownership lives in `.agent/state/execution-owner.json` and applies to a local filesystem on one machine. External editors, shared network drives and separate container PID namespaces are outside this protocol. All Hikari instances must support it. Short transactions use `.json.lock`; a crash during a transaction conservatively blocks later writes until an operator confirms no executor remains and removes the abandoned lock.
+Ownership lives in `.agent/state/execution-owner.json` and applies to a local filesystem on one machine. External editors, shared network drives and separate container PID namespaces are outside this protocol. All Hikari instances must support it. Short transactions now use `.json.lock.sqlite` OS locks, released on process exit; legacy `.json.lock` files still require inspection.
 
 Workers retry temporary connection failures and HTTP 408, 429, 500, 502, 503 and 504 with backoff. Persistent claim IDs and idempotent update IDs handle responses lost after server processing without consuming a second job or repeating completion writes. Reconnects last at most 90 seconds and stop at least 5 seconds before the last confirmed 120-second lease expires. Credential and lease rejection stop immediately. The local job journal retains interruption details and the task ID; restarting a worker never replays a model task that already started.
 
@@ -193,3 +193,15 @@ Defaults per account: 10 queued/running jobs and 5 workers. Jobs are capped at 2
 `/ready` checks the database and configured Redis (503 on failure); `/health` remains liveness. Set a separate `HIKARI_OPS_TOKEN` of at least 32 characters for Bearer-authenticated `/operations/status` (disabled returns 404). It exposes status counts, cumulative response time and memory without task data. The production entrypoint enables structured logging without bodies, authentication headers or URL queries.
 
 These foundations do not supply billing, enterprise SSO, hosted container scheduling, a complete audit platform or a capacity SLA. Validate dedicated worker environments, backups, alerts and recovery before public hosting.
+
+Lifecycle phases are checkpointed before commands start. If a phase is interrupted, Resume asks you to inspect its effects before continuing; it does not automatically replay the interrupted phase. A completed `SessionStart` is retained across Resume. One phase may contain several commands, so this is not an exactly-once guarantee for external effects. Inspect real state and use acceptance checks before repeating a command.
+
+## Superagent coordination
+
+The CLI local service adds a persistent authorization and ticket layer over the existing executor. Read [Superagent supervision](superagent.md) for explicit requests, observe/auto rules, event ingestion, review and restart behavior. Scheduled jobs and the existing self-hosted GitHub/CI routes remain separate configured execution paths.
+
+## Shared application execution
+
+All real desktop, CLI and worker requests now use `prepareAgentSession`, including work authorization, intent, layered memory and current project-source retrieval. The desktop supplies native interaction/storage adapters. See [the capability audit](architecture-upgrade.md), [packaging](packaging.md) and [API verification](provider-api-audit.md).
+
+See [Agent reliability, evaluation and delivery](agent-readiness.md) for crash-safe transaction locks, recovery adapters, memory approvals, task benchmarks and accounting boundaries.

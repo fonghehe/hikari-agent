@@ -75,7 +75,7 @@ test('offline Q&A, pause/resume, follow-up, retry, cancel, history and narrow pa
     await window.getByRole('treeitem', { name: 'src', exact: true }).click();
     await window.getByRole('treeitem', { name: 'src/cart.ts', exact: true }).click();
     await expect(window.locator('.monaco-editor')).toBeVisible();
-    await window.screenshot({ path: 'test-results/demo-narrow.png' });
+    await window.screenshot({ path: '.artifacts/test-results/demo-narrow.png' });
     await window.keyboard.press('Escape');
     await expect(window.getByRole('complementary', { name: 'Right panel' })).toBeHidden();
     await window.getByRole('button', { name: 'Toggle right panel', exact: true }).click();
@@ -145,7 +145,7 @@ test('demo Plan, Execute, simulated Diff review and restored sample state', asyn
     await expect(window.locator('[data-event-type="agent.completed"]')).toContainText(
       '示例修复完成',
     );
-    await window.screenshot({ path: 'test-results/demo-diff.png' });
+    await window.screenshot({ path: '.artifacts/test-results/demo-diff.png' });
     await app.close();
     app = await launch();
     const restored = await wideDesktopWindow(app);
@@ -301,7 +301,7 @@ test('terminal button opens a real shell without a model, captures startup outpu
     await input.press('Enter');
     await expect(page.locator('.terminal-panel')).toContainText('中文终端_日本語_VERIFIED');
     await expect(page.locator('.terminal-panel')).not.toContainText('\uFFFD');
-    await page.screenshot({ path: 'test-results/terminal-unicode.png' });
+    await page.screenshot({ path: '.artifacts/test-results/terminal-unicode.png' });
     await input.pressSequentially('exit');
     await input.press('Enter');
     await expect(

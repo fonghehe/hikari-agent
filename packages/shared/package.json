@@ -3,9 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./attachments": "./src/attachments.ts",
+    "./workspace": "./src/workspace.ts",
+    "./models": "./src/models.ts",
+    "./preferences": "./src/preferences.ts",
+    "./changes": "./src/changes.ts",
+    "./desktop-api": "./src/desktop-api.ts"
+  },
   "dependencies": {
-    "zod": "^3.25.0",
+    "zod": "catalog:",
     "@hikari/agent-core": "workspace:*"
   }
 }

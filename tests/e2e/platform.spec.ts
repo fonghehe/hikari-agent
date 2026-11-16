@@ -4,8 +4,8 @@ import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { InteractiveSession, RemoteControlServer } from '../../packages/agent-host/src';
-import type { ModelProvider } from '../../packages/agent-core/src';
+import { InteractiveSession, RemoteControlServer } from '../../packages/agent-host/src/index';
+import type { ModelProvider } from '../../packages/agent-core/src/index';
 
 test('remote browser controls the live host and shows its actual task result on mobile', async ({
   browser,
@@ -34,7 +34,7 @@ test('remote browser controls the live host and shows its actual task result on 
     await page.getByRole('button', { name: 'Start', exact: true }).click();
     await expect(page.locator('#events')).toContainText('Inspected the remote fixture task.');
     await expect(page.locator('#title')).toContainText('completed');
-    await page.screenshot({ path: 'test-results/remote-mobile.png', fullPage: true });
+    await page.screenshot({ path: '.artifacts/test-results/remote-mobile.png', fullPage: true });
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
@@ -110,7 +110,10 @@ test('desktop configures schedules, hooks, LSP and remote control through the ne
     expect(values.hooks).toHaveLength(1);
     expect(values.lsp).toHaveLength(1);
     expect(values.remote).toBeUndefined();
-    await page.screenshot({ path: 'test-results/platform-settings.png', fullPage: true });
+    await page.screenshot({
+      path: '.artifacts/test-results/platform-settings.png',
+      fullPage: true,
+    });
   } finally {
     await app.close();
     await rm(data, { recursive: true, force: true });

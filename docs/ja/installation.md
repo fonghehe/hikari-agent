@@ -2,7 +2,7 @@
 
 ## デスクトップ版を開く
 
-OS とプロセッサーに合った配布版を選んでください。ローカルで作成した配布ファイルは `apps/desktop/release/` にあります。
+OS とプロセッサーに合った配布版を選んでください。ローカルで作成した配布ファイルは `.artifacts/releases/desktop/` にあります。
 
 macOS では Hikari の DMG を開き、**Hikari** を **Applications（アプリケーション）** にドラッグしてから起動します。ZIP を展開して Hikari.app をアプリケーションへ移動することもできます。
 
@@ -19,7 +19,7 @@ pnpm install
 pnpm dev
 ```
 
-実際のプロジェクトのタスクには **Git** と **ripgrep** が必要です。ブラウザーツールには Chromium も必要です。
+実プロジェクトには **Git** と **ripgrep** が必要です。デスクトップは Electron のブラウザーを再利用します。CLI やブラウザーテストの環境だけは Playwright Chromium を次で導入できます。
 
 ```sh
 pnpm exec playwright install chromium

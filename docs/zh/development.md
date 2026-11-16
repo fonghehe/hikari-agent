@@ -63,13 +63,12 @@ DOM 点击不能覆盖 Electron 的原生命中与系统输入。涉及标题栏
 ## 构建与打包
 
 ```sh
-pnpm --filter @hikari/desktop exec playwright install chromium
 pnpm desktop:pack
 pnpm test:package
 pnpm desktop:dist
 ```
 
-`desktop:pack` 生成可运行目录；`desktop:dist` 生成安装包，输出在 `apps/desktop/release/`。两者先构建代码、检查原生模块并准备浏览器资源，不会发布安装包。main 与附件 Worker 由 esbuild 构建为 CommonJS，preload 单独构建，renderer 由 Vite 输出。
+`desktop:pack` 生成可运行目录；`desktop:dist` 生成安装包，输出在 `.artifacts/releases/desktop/`。两者先构建代码、检查原生模块并准备浏览器资源，不会发布安装包。main 与附件 Worker 由 esbuild 构建为 CommonJS，preload 单独构建，renderer 由 Vite 输出。
 
 `test:package` 启动上一步生成的应用，用独立临时数据目录验证原生模块、离线 OCR、内置浏览器、终端和沙箱执行。验证与发布 CI 均运行此检查；Linux 使用 `xvfb-run -a pnpm test:package`。它不验证正式签名、公证或真实外部模型质量。
 
@@ -112,3 +111,29 @@ GitHub Pages 工作流读取部署 base；本地子路径验证时，构建、�
 展示更新共用 100 毫秒持久化缓冲，每个任务最多暂存 2,000 条事件。工具边界、检查点、读取和关闭时立即落盘。进程突然退出可能丢失尚未刷新的展示尾部。持久化订阅属于关键订阅：写入失败会停止执行，生命周期副作用前会检查落盘状态，后续写入成功也不能掩盖此前失败。普通展示监听器的异常仍单独隔离。
 
 相关回归覆盖：`file-persistence-batching`、`resource-scope`、`execution-lifecycle`、`request-traces`、`parallel-reads`、`context-budget` 和 `agent-control`。
+
+## 可重复的离线基准
+
+不调用模型、不下载依赖，使用已有环境运行：
+
+```sh
+node scripts/benchmarks/renderer.mjs 100 30
+TSX_DISABLE_CACHE=1 node --import tsx scripts/benchmarks/runtime.ts
+TSX_DISABLE_CACHE=1 node --import tsx scripts/benchmarks/runtime.ts --ref=a291620
+```
+
+renderer 基准在内存中为真实生产 UI 加入 profiling，使用虚构任务并拦截请求；默认使用已安装 Chrome，可用 `HIKARI_TEST_BROWSER_CHANNEL` 选择其他已安装渠道。本场景不使用编辑器 Worker。输出 App/Timeline 渲染次数、commit 次数及 p95、store 通知、模拟列表 IPC 次数与字节数。前后使用相同任务数和帧数，并分别测量 10、100、1,000 个任务。这不代表原生 Electron IPC 延迟或真实模型性能。
+
+runtime 基准预热 5 次，测量 30 次追踪追加和 10 次技能查询，输出 p50/p95。`--ref` 只从指定 Git 版本读取追踪追加实现；技能始终使用当前工作区。100 份虚构 60 KB 技能分别测元数据发现、兼容 `list()` 与单项正文加载。追踪每条 20,000 或 400,000 字符、保留 16 条，不包含持久化 I/O。
+
+本地 macOS arm64 样本（Node 24.14.1、Chrome 156）：100 个任务、2,000 条历史事件下，240 个背景 delta 使 App/Timeline 渲染和 commit 从各 30 次降为 0；同步 240 个状态事件的列表调用从 240 次降为 1 次，模拟快照从 78,229,920 字节降为 325,958 字节。前台 delta 的 commit p95 为 4.2→4.4 ms，不声称前台变快。保留约 6.4 MB 追踪时追加 p95 为 14.66→14.93 ms；移除了一次重复编码，但该样本不能证明速度提升。比较时固定系统、浏览器、运行时、输入、预算和预热。单元/fixture、真实模型和远端三系统 CI 分别报告。
+
+## Superagent 验证
+
+`pnpm exec vitest run tests/runtime/superagent.test.ts tests/integration/superagent-host.test.ts` 验证准入、观察规则、授权复核、订阅、未读输入、结构化交接、目录延续及重启。`pnpm exec playwright test tests/e2e/superagent.spec.ts` 使用本地脚本模型验证真实协调页面。测试启动 loopback 夹具服务并使用临时项目，不调用付费模型或发布成果。参见[设计边界](superagent.md)。
+
+## 共享应用执行
+
+普通桌面、CLI 与 Worker 请求现均通过 `prepareAgentSession` 接入授权、意图、分层记忆与当前源码检索。桌面保留原生交互和存储适配。参见[整项目能力盘点](architecture-upgrade.md)、[打包](packaging.md)及 [API 核实](provider-api-audit.md)。
+
+恢复、独立记忆审批、任务基准、交付与计费的新机制见 [Agent 可靠性与评测](agent-readiness.md)。

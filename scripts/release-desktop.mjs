@@ -32,10 +32,11 @@ if (process.argv.includes('--check')) {
   process.exit(0);
 }
 if (process.argv.length > 2) throw new Error('Supported option: --check');
-const run = (command, args, cwd = root) =>
+const run = (command, args, cwd = root, env = process.env) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
+      env,
       stdio: 'inherit',
       shell: process.platform === 'win32',
     });
@@ -54,7 +55,7 @@ const config = path.join(desktop, 'release.config.json');
 try {
   await run('node', ['scripts/build.mjs'], desktop);
   await run('node', ['scripts/check-native.mjs'], desktop);
-  await run('node', ['scripts/browser-assets.mjs'], desktop);
+  await run('node', ['scripts/stage-package.mjs'], desktop);
   await writeFile(
     config,
     JSON.stringify({
@@ -64,11 +65,10 @@ try {
       forceCodeSigning: ['darwin', 'win32'].includes(process.platform),
     }),
   );
-  await run(
-    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-    ['exec', 'electron-builder', '--config', config, '--publish', 'always'],
-    desktop,
-  );
+  await run('node', ['scripts/package.mjs', '--release-config', config], desktop, {
+    ...process.env,
+    HIKARI_RELEASE_AUTHORIZED: '1',
+  });
 } finally {
   await writeFile(manifest, original);
   await rm(config, { force: true });

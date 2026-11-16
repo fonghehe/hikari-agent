@@ -4,8 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, realpath, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
-import { TaskManager } from '../../packages/agent-runtime/src';
+import { LocalPersistence } from '../../apps/desktop/src/main/storage/persistence';
+import { TaskManager } from '../../packages/agent-runtime/src/index';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 
@@ -72,7 +72,7 @@ test('project chat settings retain their own root and field surfaces while sync 
         return entry.getBoundingClientRect().top >= composer.getBoundingClientRect().bottom;
       }),
     ).toBe(true);
-    await page.screenshot({ path: 'test-results/conversation-project-settings.png' });
+    await page.screenshot({ path: '.artifacts/test-results/conversation-project-settings.png' });
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(
       page
@@ -140,7 +140,7 @@ test('project chat settings retain their own root and field surfaces while sync 
       expect(surface.background).not.toBe(surface.panel);
       expect(surface.border).toBe('solid');
       expect(surface.radius).toBeGreaterThanOrEqual(6);
-      await page.screenshot({ path: `test-results/project-field-surface-${theme}.png` });
+      await page.screenshot({ path: `.artifacts/test-results/project-field-surface-${theme}.png` });
       await settings.getByRole('button', { name: 'Close', exact: true }).click();
     }
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -151,7 +151,7 @@ test('project chat settings retain their own root and field surfaces while sync 
       page.getByRole('button', { name: 'Toggle right panel', exact: true }),
     ).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('complementary', { name: 'Right panel' })).toBeHidden();
-    await page.screenshot({ path: 'test-results/account-sync-dialog.png' });
+    await page.screenshot({ path: '.artifacts/test-results/account-sync-dialog.png' });
     await page.keyboard.press('Escape');
     await expect(sync).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeFocused();

@@ -1,10 +1,7 @@
 packages:
   - apps/*
   - packages/*
-# Keep installation and script execution on the same project-local module layout.
 enableGlobalVirtualStore: false
-# Cached postinstall output loses Electron framework symlinks on reinstall.
-# Re-run native installers so a clean install is also a valid signed bundle.
 sideEffectsCache: false
 allowBuilds:
   electron: true
@@ -12,3 +9,65 @@ allowBuilds:
   esbuild: true
   node-pty: true
   tesseract.js: false
+catalog:
+  '@fastify/rate-limit': ^10.3.0
+  '@fastify/websocket': ^11.3.7
+  '@langchain/core': ^1.4.0
+  '@langchain/google-genai': ^2.3.6
+  '@langchain/langgraph': ^1.7.4
+  '@langchain/openai': ^1.8.4
+  '@modelcontextprotocol/sdk': ^1.32.2
+  '@napi-rs/canvas': ^1.1.1
+  '@playwright/test': ^1.65.0
+  '@radix-ui/react-slot': ^1.5.0
+  '@tailwindcss/vite': ^4.3.5
+  '@tesseract.js-data/chi_sim': ^1.0.0
+  '@tesseract.js-data/eng': ^1.0.0
+  '@tesseract.js-data/jpn': ^1.0.0
+  '@types/node': ^24.19.2
+  '@types/pg': ^8.15.0
+  '@types/react': ^19.0.0
+  '@types/react-dom': ^19.0.0
+  '@vitejs/plugin-react': ^5.0.0
+  '@xterm/addon-fit': ^0.10.0
+  '@xterm/headless': 5.5.0
+  '@xterm/xterm': ^5.5.0
+  ajv: ^8.17.1
+  class-variance-authority: ^0.7.1
+  clsx: ^2.1.1
+  diff: ^8.0.0
+  drizzle-orm: ^0.44.0
+  electron: ^40.0.0
+  electron-builder: ^26.18.0
+  electron-updater: ^6.8.11
+  esbuild: ^0.25.0
+  fastify: ^5.12.8
+  ioredis: ^5.8.0
+  lucide-react: ^0.468.0
+  mammoth: ^1.13.0
+  monaco-editor: ^0.55.0
+  node-pty: ^1.1.0
+  oxfmt: ^0.71.0
+  oxlint: ^1.93.0
+  pdfjs-dist: ^6.5.438
+  pg: ^8.16.0
+  playwright: ^1.65.0
+  react: ^19.3.1
+  react-dom: ^19.3.1
+  react-markdown: ^10.1.0
+  remark-gfm: ^4.0.1
+  sharp: ^0.35.5
+  tailwind-merge: ^3.3.0
+  tailwindcss: ^4.3.5
+  tesseract.js: ^7.0.0
+  tsx: ^4.20.0
+  turbo: ^2.11.11
+  typescript: ^5.9.0
+  unpdf: ^1.9.1
+  vite: ^7.3.8
+  vitepress: ^1.6.4
+  vitest: ^3.2.0
+  yaml: ^2.8.0
+  zod: ^3.25.0
+  zod-to-json-schema: ^3.25.0
+  zustand: ^5.1.0

@@ -1,8 +1,8 @@
 import { app, dialog, safeStorage } from 'electron';
 import path from 'node:path';
 import { rm } from 'node:fs/promises';
-import { secureStorageAvailable } from '../secret-storage';
-import { backupData, stageRestore, storageStatus } from '../data-maintenance';
+import { secureStorageAvailable } from '../storage/secret-storage';
+import { backupData, stageRestore, storageStatus } from '../storage/data-maintenance';
 import { removeSavedTask } from './tasks';
 import type { DesktopContext, RegisterHandler } from './context';
 

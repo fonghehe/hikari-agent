@@ -1,10 +1,10 @@
-import { secureStorageAvailable, purgeWeakCredentials } from '../secret-storage';
+import { secureStorageAvailable, purgeWeakCredentials } from '../storage/secret-storage';
 import { createHash } from 'node:crypto';
 import { app, dialog, safeStorage } from 'electron';
 import { z } from 'zod';
 import { ExtensionManager } from '../extensions';
 import { UpdateService } from '../updates';
-import { SyncClient } from '../sync';
+import { SyncClient } from '../storage/sync';
 import { id, resolveProjectRoot, type DesktopContext, type RegisterHandler } from './context';
 
 export function registerServicesHandlers(handle: RegisterHandler, context: DesktopContext) {

@@ -73,3 +73,11 @@ See [Development and verification](development.md) and [Data, memory and retriev
 ## Shared execution host
 
 `packages/agent-host` composes the existing runtime, tools, permissions, MCP and Skills for CLI and workers. The desktop retains attachment and UI persistence ownership and shares `prepareCapabilities` for delegation, hooks, LSP and history. `ipc/platform.ts` validates schedule, plugin, configuration and history requests. Remote HTTP adapters expose only an explicitly selected project; the API service owns worker enrollment and durable execution leases, not local model credentials.
+
+## Superagent control plane
+
+The CLI `serve` path composes `SuperagentEngine` with `SuperagentSession` and the existing `SessionHost`. Domain contracts live in `agent-core`; the engine commits tickets, immutable mandates, decisions, policy history and external-work intents together. The router has no workspace tools. Executors keep existing sandbox and acceptance gates; each assignment maps to a saved Task. Desktop conversations retain `TaskHost` and direct user control. See the [architecture decision and boundaries](superagent.md#architecture-decision-and-boundaries).
+
+## Shared application execution
+
+All real desktop, CLI and worker requests now use `prepareAgentSession`, including work authorization, intent, layered memory and current project-source retrieval. The desktop supplies native interaction/storage adapters. See [the capability audit](architecture-upgrade.md), [packaging](packaging.md) and [API verification](provider-api-audit.md).

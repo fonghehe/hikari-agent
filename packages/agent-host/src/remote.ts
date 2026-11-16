@@ -11,6 +11,7 @@ import {
 import { automationInput, AutomationService, StateStore } from '@hikari/agent-runtime';
 import { GitService } from '@hikari/git';
 import { TimelineService } from '@hikari/tools';
+import type { SuperagentSession } from './superagent-session';
 
 export interface ControlAdapter {
   root: string;
@@ -21,6 +22,11 @@ export interface ControlAdapter {
   approve(taskId: string, requestId: string, decision: Decision): void;
   answer(taskId: string, questionId: string, answer: string): void;
   rewind?(id: string, mode: 'code' | 'conversation' | 'both'): Promise<unknown>;
+  superagent?: SuperagentSession['superagent'];
+  overview?: SuperagentSession['overview'];
+  submit?: SuperagentSession['submit'];
+  tick?: SuperagentSession['tick'];
+  ticketControl?: SuperagentSession['ticketControl'];
 }
 export async function readJSON(request: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -92,6 +98,77 @@ export class RemoteControlServer {
         !secretMatches(request.headers.authorization.slice(7), this.token)
       )
         return this.send(reply, 401, { error: 'Access token required' });
+      if (pathname === '/api/superagent' && request.method === 'GET' && this.adapter.overview)
+        return this.send(reply, 200, this.adapter.overview());
+      if (
+        pathname === '/api/superagent/request' &&
+        request.method === 'POST' &&
+        this.adapter.submit
+      ) {
+        const value = z
+          .object({
+            prompt: z.string().trim().min(1).max(12000),
+            options: runOptionsSchema.default({}),
+            isolated: z.boolean().default(true),
+          })
+          .parse(await readJSON(request));
+        const result = this.adapter.submit(value.prompt, value.options, value.isolated);
+        await this.adapter.tick?.();
+        return this.send(reply, 202, result);
+      }
+      if (
+        pathname === '/api/superagent/policy' &&
+        request.method === 'POST' &&
+        this.adapter.superagent
+      ) {
+        const value = z
+          .object({ policy: z.unknown(), baseVersion: z.string().uuid() })
+          .parse(await readJSON(request));
+        return this.send(
+          reply,
+          200,
+          this.adapter.superagent.configure(value.policy, value.baseVersion),
+        );
+      }
+      // This is an operator-authenticated Source port, not a public webhook endpoint.
+      if (
+        pathname === '/api/superagent/triggers' &&
+        request.method === 'POST' &&
+        this.adapter.superagent
+      ) {
+        const result = this.adapter.superagent.receive(await readJSON(request));
+        await this.adapter.tick?.();
+        return this.send(reply, 202, result);
+      }
+      if (
+        pathname === '/api/superagent/reevaluate' &&
+        request.method === 'POST' &&
+        this.adapter.superagent
+      ) {
+        const value = z
+          .object({ source: z.string(), triggerId: z.string() })
+          .parse(await readJSON(request));
+        this.adapter.superagent.reevaluate(value.source, value.triggerId);
+        await this.adapter.tick?.();
+        return this.send(reply, 200, { ok: true });
+      }
+      const ticketAction = /^\/api\/superagent\/tickets\/([^/]+)$/.exec(pathname);
+      const ticketInput = /^\/api\/superagent\/tickets\/([^/]+)\/input$/.exec(pathname);
+      if (ticketInput && request.method === 'POST' && this.adapter.superagent) {
+        const value = z
+          .object({ text: z.string().trim().min(1).max(12000) })
+          .parse(await readJSON(request));
+        this.adapter.superagent.followup(z.string().uuid().parse(ticketInput[1]), value.text);
+        await this.adapter.tick?.();
+        return this.send(reply, 200, { ok: true });
+      }
+      if (ticketAction && request.method === 'POST' && this.adapter.ticketControl) {
+        const value = z
+          .object({ action: z.enum(['stop', 'retry', 'pause', 'resume', 'reviewed']) })
+          .parse(await readJSON(request));
+        await this.adapter.ticketControl(z.string().uuid().parse(ticketAction[1]), value.action);
+        return this.send(reply, 200, { ok: true });
+      }
       if (request.method === 'GET' && pathname === '/api/tasks')
         return this.send(reply, 200, {
           root: this.adapter.root,
@@ -218,14 +295,69 @@ export class RemoteControlServer {
 }
 
 const remoteScript = String.raw`
-const $=id=>document.getElementById(id);let token=sessionStorage.getItem('hikari-token')||'';let selected='';let polling=false;
-async function api(path,data){const r=await fetch('/api/'+path,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});const v=await r.json();if(!r.ok)throw Error(v.error||'Request failed');return v}
+const $=id=>document.getElementById(id);
+let token=sessionStorage.getItem('hikari-token')||'',selected='',selectedTicket='',polling=false,supervision,initialized=false;
+async function api(path,data){
+  const r=await fetch('/api/'+path,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});
+  const v=await r.json();if(!r.ok)throw Object.assign(Error(v.error||'Request failed'),{status:r.status});return v;
+}
 function button(text,action){const b=document.createElement('button');b.textContent=text;b.onclick=()=>Promise.resolve().then(action).then(refresh).catch(showError);return b}
 function showError(e){$('error').textContent=e.message||String(e)}
-$('connect').onclick=()=>{token=$('token').value;sessionStorage.setItem('hikari-token',token);$('token').value='';refresh().catch(showError)};
-$('start').onclick=async()=>{try{const task=await api('tasks',{prompt:$('prompt').value,isolated:$('isolated').checked,options:{mode:$('mode').value}});selected=task.id;$('prompt').value='';await refresh()}catch(e){showError(e)}};
-$('send').onclick=async()=>{try{await api('tasks/'+selected+'/input',{text:$('message').value});$('message').value=''}catch(e){showError(e)}};
-async function refresh(){if(!token||polling)return;polling=true;try{const data=await api('tasks');$('error').textContent='';$('project').textContent=data.root;$('tasks').replaceChildren();for(const task of data.tasks.slice().reverse())$('tasks').append(button(task.title+' · '+task.status,()=>{selected=task.id}));const task=data.tasks.find(t=>t.id===selected)||data.tasks.at(-1);if(!task)return;selected=task.id;$('title').textContent=task.title+' · '+task.status;$('events').textContent=task.events.filter(e=>['agent.completed','agent.failed','agent.interrupted','agent.answer','subagent.spawned','goal.continued'].includes(e.type)).map(e=>e.type+'\n'+JSON.stringify(e.data,null,2)).join('\n\n');$('actions').replaceChildren();for(const action of ['pause','resume','cancel'])$('actions').append(button(action,()=>api('tasks/'+selected+'/control',{action})));$('actions').append(button('View diff',async()=>{$('diff').textContent=(await api('tasks/'+selected+'/diff')).diff}));$('approval').replaceChildren();const resolved=new Set(task.events.filter(e=>['permission.approved','permission.denied'].includes(e.type)).map(e=>e.data.id));for(const e of task.events.filter(e=>e.type==='permission.requested'&&!resolved.has(e.data.request.id))){const p=document.createElement('pre');p.textContent=JSON.stringify(e.data.request,null,2);$('approval').append(p,button('Allow once',()=>api('tasks/'+selected+'/approve',{requestId:e.data.request.id,decision:'once'})),button('Deny',()=>api('tasks/'+selected+'/approve',{requestId:e.data.request.id,decision:'deny'})))}if(task.pendingQuestion){const p=document.createElement('p');p.textContent=task.pendingQuestion.question;const input=document.createElement('input');input.setAttribute('aria-label','Answer');$('approval').append(p,input,button('Answer',()=>api('tasks/'+selected+'/answer',{questionId:task.pendingQuestion.id,answer:input.value})))}}finally{polling=false}}
+function selectTicket(ticket){selectedTicket=ticket.id;selected=ticket.assignments.at(-1).taskId}
+function label(stage){return ({'person:permission':'Awaiting approval','person:delivery':'Input undelivered','person:paused':'Paused','person:answer':'Awaiting answer','person:review':'Awaiting review','person:blocked':'Blocked','person:failed':'Failed',queued:'Queued',waiting:'Waiting for an event',working:'Working',ended:'Ended'})[stage]||stage}
+$('connect').onclick=()=>{token=$('token').value;sessionStorage.setItem('hikari-token',token);$('token').value='';initialized=false;refresh().catch(showError)};
+$('start').onclick=async()=>{try{
+  const input={prompt:$('prompt').value,isolated:$('mode').value!=='plan'&&$('isolated').checked,options:{mode:$('mode').value}};
+  if(supervision){const result=await api('superagent/request',input);selectedTicket=result.decision?.ticketId||''}
+  else{const task=await api('tasks',input);selected=task.id;selectedTicket=''}
+  $('prompt').value='';await refresh();
+}catch(e){showError(e)}};
+$('send').onclick=async()=>{try{
+  await api(selectedTicket?'superagent/tickets/'+selectedTicket+'/input':'tasks/'+selected+'/input',{text:$('message').value});
+  $('message').value='';await refresh();
+}catch(e){showError(e)}};
+async function refresh(){if(!token||polling)return;polling=true;try{
+  const [data,state]=await Promise.all([api('tasks'),api('superagent').catch(e=>{if(e.status===404)return undefined;throw e})]);
+  supervision=state;if(!initialized){$('isolated').checked=!!state;initialized=true;}$('error').textContent='';$('project').textContent=data.root;$('tasks').replaceChildren();$('attention').replaceChildren();$('problems').replaceChildren();
+  $('attention-section').hidden=!state||state.attention.length===0;
+  $('problems-section').hidden=!state||state.unavailable.length===0;
+  for(const decision of state?.unavailable||[])$('problems').append(button('Evaluate again: '+decision.trigger.text.slice(0,80),()=>api('superagent/reevaluate',{source:decision.trigger.source,triggerId:decision.trigger.id})));
+  if(state){
+    for(const ticket of state.attention)$('attention').append(button(ticket.mandate.scope.slice(0,80)+' · '+label(state.stages[ticket.id]),()=>selectTicket(ticket)));
+    for(const ticket of state.tickets.slice().reverse())$('tasks').append(button(ticket.mandate.scope.slice(0,80)+' · '+label(state.stages[ticket.id]),()=>selectTicket(ticket)));
+    $('history').textContent=state.decisions.slice(-20).reverse().map(d=>d.outcome+(d.wouldAccept?' (would accept)':'')+' · '+d.reason+' · '+d.trigger.text.slice(0,120)).join('\n');
+  }
+  const assigned=new Set((state?.tickets||[]).flatMap(t=>t.assignments.map(a=>a.taskId)));
+  for(const task of data.tasks.slice().reverse().filter(t=>!assigned.has(t.id)))$('tasks').append(button(task.title+' · '+task.status,()=>{selected=task.id;selectedTicket=''}));
+  let ticket=state?.tickets.find(t=>t.id===selectedTicket);
+  if(ticket)selected=ticket.assignments.at(-1).taskId;
+  const task=data.tasks.find(t=>t.id===selected)||(!ticket?data.tasks.at(-1):undefined);
+  if(!task&&!ticket)return;
+  if(task)selected=task.id;
+  $('title').textContent=ticket?ticket.mandate.scope+' · '+label(state.stages[ticket.id]):task.title+' · '+task.status;
+  $('events').textContent=(task?.events||[]).filter(e=>['agent.completed','agent.failed','agent.interrupted','agent.answer','agent.handoff'].includes(e.type)).map(e=>e.type+'\n'+JSON.stringify(e.data,null,2)).join('\n\n');
+  if(ticket?.report)$('events').textContent=ticket.report.text+'\n\n'+$('events').textContent;
+  if(task?.delivery)$('events').textContent='Delivery: '+task.delivery.verification+'\n'+task.delivery.artifacts.map(a=>a.label+' · '+a.state+' · '+a.locator).join('\n')+'\nUnfinished: '+task.delivery.unfinished.join('; ')+'\nLimits: '+task.delivery.limitations.join('; ')+'\n\n'+$('events').textContent;
+  const metrics=ticket?state.ticketMetrics?.[ticket.id]:undefined;
+  if(metrics)$('events').textContent='Known model cost: $'+metrics.knownModelCostUsd.toFixed(4)+(metrics.hasUnpricedRuns?' (incomplete pricing)':'')+' · Human interventions: '+metrics.interventions+' · Waiting: '+(metrics.waitingMs/1000).toFixed(1)+'s\n\n'+$('events').textContent;
+  $('actions').replaceChildren();
+  if(ticket){
+    if(ticket.state==='open'){
+      for(const action of ticket.paused?['resume','stop']:['pause','stop'])$('actions').append(button(action,()=>{if(action==='stop'&&!confirm('Stop this ticket and withdraw its authorization?'))return;return api('superagent/tickets/'+ticket.id,{action})}));
+      if(ticket.deliveryError||['blocked','failed'].includes(ticket.report?.status))$('actions').append(button('Retry',()=>api('superagent/tickets/'+ticket.id,{action:'retry'})));
+      if(ticket.report?.status==='ready')$('actions').append(button('Mark reviewed',()=>api('superagent/tickets/'+ticket.id,{action:'reviewed'})));
+    }
+  }else for(const action of ['pause','resume','cancel'])$('actions').append(button(action,()=>api('tasks/'+selected+'/control',{action})));
+  if(task)$('actions').append(button('View diff',async()=>{$('diff').textContent=(await api('tasks/'+selected+'/diff')).diff}));
+  $('approval').replaceChildren();
+  if(ticket?.report?.humanAction){const p=document.createElement('p');p.textContent=ticket.report.humanAction.question;$('approval').append(p)}
+  const resolved=new Set((task?.events||[]).filter(e=>['permission.approved','permission.denied'].includes(e.type)).map(e=>e.data.id));
+  for(const e of (task?.events||[]).filter(e=>e.type==='permission.requested'&&!resolved.has(e.data.request.id))){
+    const p=document.createElement('pre');p.textContent=JSON.stringify(e.data.request,null,2);
+    $('approval').append(p,button('Allow once',()=>api('tasks/'+selected+'/approve',{requestId:e.data.request.id,decision:'once'})),button('Deny',()=>api('tasks/'+selected+'/approve',{requestId:e.data.request.id,decision:'deny'})));
+  }
+  if(task?.pendingQuestion){const p=document.createElement('p');p.textContent=task.pendingQuestion.question;const input=document.createElement('input');input.setAttribute('aria-label','Answer');$('approval').append(p,input,button('Answer',()=>api('tasks/'+selected+'/answer',{questionId:task.pendingQuestion.id,answer:input.value})))}
+}finally{polling=false}}
 setInterval(()=>refresh().catch(showError),2000);refresh().catch(showError);
 `;
-export const remoteHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hikari Remote</title><style>*{box-sizing:border-box}body{overflow-wrap:anywhere;font:16px system-ui;margin:24px auto;max-width:1100px;padding:0 16px;background:#111827;color:#e5e7eb}input,textarea,select,button{font:inherit;padding:10px;margin:5px;border-radius:6px;max-width:95%}textarea{display:block;width:95%;min-height:80px}button{cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere}main>*{min-width:0}main{display:grid;grid-template-columns:260px 1fr;gap:24px}#error{color:#fca5a5}@media(max-width:700px){main{display:block}}</style></head><body><h1>Hikari Remote</h1><p id="project"></p><label>Access token <input id="token" type="password" autocomplete="off"></label><button id="connect">Connect</button><p id="error" role="alert"></p><main><aside><h2>Tasks</h2><div id="tasks"></div></aside><section><label for="prompt">New task</label><textarea id="prompt"></textarea><label>Mode <select id="mode" aria-label="Mode"><option value="execute">Execute</option><option value="plan">Plan</option></select></label><label><input id="isolated" type="checkbox">Isolated worktree</label><button id="start">Start</button><h2 id="title"></h2><div id="actions"></div><div id="approval"></div><label for="message">Additional instructions</label><textarea id="message"></textarea><button id="send">Send</button><pre id="events"></pre><pre id="diff"></pre></section></main><script>${remoteScript}</script></body></html>`;
+export const remoteHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hikari Remote</title><style>*{box-sizing:border-box}body{overflow-wrap:anywhere;font:16px system-ui;margin:24px auto;max-width:1100px;padding:0 16px;background:#111827;color:#e5e7eb}input,textarea,select,button{font:inherit;padding:10px;margin:5px;border-radius:6px;max-width:95%}textarea{display:block;width:95%;min-height:80px}button{cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere}main>*{min-width:0}main{display:grid;grid-template-columns:260px 1fr;gap:24px}#error{color:#fca5a5}@media(max-width:700px){main{display:block}}</style></head><body><h1>Hikari Remote</h1><p id="project"></p><label>Access token <input id="token" type="password" autocomplete="off"></label><button id="connect">Connect</button><p id="error" role="alert"></p><section id="attention-section" hidden><h2>Needs your attention</h2><div id="attention"></div></section><section id="problems-section" hidden><h2>Needs evaluation</h2><div id="problems"></div></section><main><aside><h2>Work</h2><div id="tasks"></div></aside><section><label for="prompt">New task</label><textarea id="prompt"></textarea><label>Mode <select id="mode" aria-label="Mode"><option value="execute">Execute</option><option value="plan">Plan</option></select></label><label><input id="isolated" type="checkbox">Isolated worktree</label><button id="start">Start</button><h2 id="title"></h2><div id="actions"></div><div id="approval"></div><label for="message">Additional instructions</label><textarea id="message"></textarea><button id="send">Send</button><details><summary>Intake history</summary><pre id="history"></pre></details><pre id="events"></pre><pre id="diff"></pre></section></main><script>${remoteScript}</script></body></html>`;

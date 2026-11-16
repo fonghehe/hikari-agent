@@ -19,6 +19,11 @@ export class HookLifecycle implements Lifecycle {
   get parallelReadsSafe() {
     return !this.hooks.some((hook) => ['PreToolUse', 'PostToolUse'].includes(hook.event));
   }
+  hasEffects(event: LifecycleEvent, call?: import('@hikari/agent-core').ToolCall) {
+    return this.hooks.some(
+      (hook) => hook.event === event && (!hook.tool || hook.tool === call?.name),
+    );
+  }
   constructor(
     private task: Task,
     private events: EventSink,

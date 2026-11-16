@@ -4,7 +4,7 @@ import { realpath, stat } from 'node:fs/promises';
 import { z } from 'zod';
 import type { Task } from '@hikari/agent-core';
 import type { Workspace, WorkspaceProject } from '@hikari/shared';
-import type { LocalPersistence } from './persistence';
+import type { LocalPersistence } from './storage/persistence';
 import { listWorkspaceProjects, openWorkspace } from './workspace';
 
 const projectSchema = z.object({

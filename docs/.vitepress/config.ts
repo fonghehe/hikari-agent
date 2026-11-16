@@ -30,6 +30,7 @@ const routes = [
   'troubleshooting',
   'run-controls',
   'platform',
+  'superagent',
 ];
 function guide(prefix: string, labels: Labels): DefaultTheme.Config {
   return {
@@ -49,12 +50,18 @@ function guide(prefix: string, labels: Labels): DefaultTheme.Config {
       },
       {
         text: labels.developer,
-        items: ['electron-architecture', 'development', 'memory-and-storage'].map(
-          (route, index) => ({
-            text: labels.developerPages[index]!,
-            link: `${prefix}/${route}`,
-          }),
-        ),
+        items: [
+          'electron-architecture',
+          'development',
+          'memory-and-storage',
+          'architecture-upgrade',
+          'packaging',
+          'provider-api-audit',
+          'agent-readiness',
+        ].map((route, index) => ({
+          text: labels.developerPages[index]!,
+          link: `${prefix}/${route}`,
+        })),
       },
     ],
     langMenuLabel: labels.language,
@@ -87,6 +94,10 @@ export default defineConfig({
           'Electron architecture',
           'Development and verification',
           'Data, memory and retrieval',
+          'Application architecture and capabilities',
+          'Desktop packaging',
+          'Provider API audit',
+          'Agent reliability and evaluation',
         ],
         pages: [
           'Getting started',
@@ -100,6 +111,7 @@ export default defineConfig({
           'Troubleshooting',
           'Run, verify and resume',
           'Automation and integrations',
+          'Superagent supervision',
         ],
         language: 'Change language',
         outline: 'On this page',
@@ -121,7 +133,15 @@ export default defineConfig({
       themeConfig: guide('/zh', {
         guide: '操作手册',
         developer: '开发者指南',
-        developerPages: ['Electron 架构', '开发与验证', '数据、记忆与检索'],
+        developerPages: [
+          'Electron 架构',
+          '开发与验证',
+          '数据、记忆与检索',
+          '整项目架构与能力',
+          '桌面打包',
+          '厂商 API 核实',
+          'Agent 可靠性与评测',
+        ],
         pages: [
           '快速开始',
           '安装',
@@ -134,6 +154,7 @@ export default defineConfig({
           '常见问题',
           '执行、验收与恢复',
           '自动化与开发集成',
+          'Superagent 任务协调',
         ],
         language: '切换语言',
         outline: '本页目录',
@@ -155,7 +176,15 @@ export default defineConfig({
       themeConfig: guide('/ja', {
         guide: '操作ガイド',
         developer: '開発者ガイド',
-        developerPages: ['Electron アーキテクチャ', '開発と検証', 'データ・記憶・検索'],
+        developerPages: [
+          'Electron アーキテクチャ',
+          '開発と検証',
+          'データ・記憶・検索',
+          'アプリ全体の設計',
+          'パッケージ',
+          'API 監査',
+          'Agent の信頼性と評価',
+        ],
         pages: [
           'はじめに',
           'インストール',
@@ -168,6 +197,7 @@ export default defineConfig({
           '困ったとき',
           '実行・検証・再開',
           '自動実行と開発環境との連携',
+          'Superagent の監督',
         ],
         language: '言語を変更',
         outline: 'このページの内容',

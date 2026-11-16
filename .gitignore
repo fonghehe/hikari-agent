@@ -18,6 +18,11 @@ docs/.vitepress/dist/
 .env.*
 !.env.example
 .agent/
+.agents/
+.aider-desk/
+/.continue/
+# Lock file for locally installed development skills
+/skills-lock.json
 /.codex/
 /.claude/
 /.workbuddy/
@@ -73,3 +78,7 @@ Desktop.ini
 # Local optimization notes; keep shared agent instructions and project documentation
 /design-system/hikari/MASTER.md
 /docs/superpowers/
+/apps/desktop/.package/
+
+# Centralized generated reports, package staging and release outputs
+/.artifacts/

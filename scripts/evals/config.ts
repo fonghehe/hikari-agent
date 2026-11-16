@@ -1,7 +1,7 @@
 import { loadEnvFile } from 'node:process';
-import { modelConfigSchema, providerCatalog } from '../../packages/shared/src';
-import { runOptionsSchema } from '../../packages/agent-core/src';
-import { resolvedModelConfig } from '../../packages/model-provider/src';
+import { modelConfigSchema, providerCatalog } from '../../packages/shared/src/index';
+import { runOptionsSchema } from '../../packages/agent-core/src/index';
+import { resolvedModelConfig } from '../../packages/model-provider/src/index';
 
 type Suite = 'agent' | 'capabilities' | 'repository';
 type Environment = Record<string, string | undefined>;
@@ -76,6 +76,8 @@ export function evaluationSettings(
     maxOutputTokens: number('AGENT_MAX_OUTPUT_TOKENS'),
     inputPerMillion: number('AGENT_INPUT_PRICE'),
     outputPerMillion: number('AGENT_OUTPUT_PRICE'),
+    cachedInputPerMillion: number('AGENT_CACHED_INPUT_PRICE'),
+    cacheWriteInputPerMillion: number('AGENT_CACHE_WRITE_PRICE'),
     streaming: boolean('AGENT_STREAMING'),
     reasoningEffort: env.AGENT_REASONING_EFFORT,
   });

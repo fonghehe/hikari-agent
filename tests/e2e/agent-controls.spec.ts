@@ -80,6 +80,9 @@ test('persists project memory and manages MCP secrets and skills through the des
         })
       ).id;
     }, `http://127.0.0.1:${address.port}/v1`);
+    await window.getByRole('button', { name: /^Remember the release convention/ }).click();
+    await expect(window.getByRole('button', { name: 'Allow once', exact: true })).toBeVisible();
+    await window.getByRole('button', { name: 'Allow once', exact: true }).click();
     await expect
       .poll(() =>
         window.evaluate(
@@ -89,6 +92,9 @@ test('persists project memory and manages MCP secrets and skills through the des
         ),
       )
       .toBe('completed');
+    await expect(
+      window.getByRole('region', { name: 'Delivery record', exact: true }),
+    ).toContainText('Not independently verified');
     await window.getByRole('button', { name: 'Memory & extensions', exact: true }).click();
     const dialog = window.getByRole('dialog', { name: 'Memory & extensions' });
     await expect(dialog.getByText('Release convention', { exact: true })).toBeVisible();

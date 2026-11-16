@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { classifyGrader, classifyTask, evidenceEnvelope, invalid } from './evidence';
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -6,11 +7,11 @@ import {
   repositorySuiteSchema,
   type EvaluationCommand,
 } from '../../packages/agent-host/src/evaluation';
-import { redact, runOptionsSchema } from '../../packages/agent-core/src';
-import { SessionHost } from '../../packages/agent-host/src';
-import { GitService } from '../../packages/git/src';
-import { NativeSandboxProvider, runProcess } from '../../packages/sandbox/src';
-import { createModelProvider } from '../../packages/model-provider/src';
+import { redact, runOptionsSchema } from '../../packages/agent-core/src/index';
+import { SessionHost } from '../../packages/agent-host/src/index';
+import { GitService } from '../../packages/git/src/index';
+import { NativeSandboxProvider, runProcess } from '../../packages/sandbox/src/index';
+import { createModelProvider } from '../../packages/model-provider/src/index';
 import { evaluationHelp, evaluationSettings, loadEvaluationEnv } from './config';
 
 async function main() {
@@ -52,6 +53,7 @@ async function main() {
       const root = path.join(temporary, 'checkout');
       let host: SessionHost | undefined;
       const started = Date.now();
+      let phase: 'environment' | 'provider' | 'harness' | 'verifier' = 'environment';
       try {
         // Only local repositories and exact commits are accepted; the source checkout is never edited.
         const source = await realpath(path.resolve(path.dirname(filename), test.repository));
@@ -94,14 +96,31 @@ async function main() {
           }),
         );
         const baseline = await execute(test.grader);
-        if (baseline.exitCode === 0)
-          throw new Error('Baseline passed; this case does not reproduce the requested defect');
+        const baselineClass = classifyGrader(baseline, test.expectedBaseline);
+        if (baselineClass.validity === 'invalid' || baselineClass.passed) {
+          results.push({
+            case: test.name,
+            commit: test.commit,
+            sample,
+            passed: false,
+            ...invalid(
+              baselineClass.failureKind === 'environment' ? 'environment' : 'verifier',
+              baselineClass.reason ??
+                'Baseline passed; this case does not reproduce the requested defect',
+            ),
+            baselineExit: baseline.exitCode,
+            baselineOutput: String(redact(baseline.output)),
+            durationMs: Date.now() - started,
+          });
+          continue;
+        }
         if (settings.mode === 'validate') {
           results.push({
             case: test.name,
             commit: test.commit,
             sample,
             passed: true,
+            validity: 'valid' as const,
             baselineExit: baseline.exitCode,
             evidence: 'baseline-only',
             durationMs: Date.now() - started,
@@ -109,6 +128,7 @@ async function main() {
           console.log(`Baseline validated: ${test.name}`);
           continue;
         }
+        phase = 'harness';
         host = new SessionHost({
           root,
           provider: createModelProvider(settings.config),
@@ -149,13 +169,21 @@ async function main() {
             .catch(() => undefined);
           if (!current?.equals(before)) preservedPassed = false;
         }
+        phase = 'verifier';
         const graded = await execute(test.grader);
+        const taskClass = classifyTask(task);
+        const gradedClass = classifyGrader(graded, undefined, {
+          baselineValidated: true,
+          agentChanged: modified.size > 0,
+        });
+        const classification = taskClass.validity === 'invalid' ? taskClass : gradedClass;
         const passed =
           task.status === 'completed' &&
           modified.size > 0 &&
           outsideAllowed.length === 0 &&
           preservedPassed &&
-          graded.exitCode === 0;
+          graded.exitCode === 0 &&
+          classification.validity === 'valid';
         const stem = `${test.name}-${sample}`;
         await writeFile(
           path.join(directory, stem + '.task.json'),
@@ -169,7 +197,14 @@ async function main() {
           case: test.name,
           commit: test.commit,
           sample,
+          ...classification,
           passed,
+          failureKind:
+            classification.validity === 'invalid'
+              ? classification.failureKind
+              : !passed
+                ? ('agent' as const)
+                : undefined,
           evidence: 'model-run',
           status: task.status,
           baselineExit: baseline.exitCode,
@@ -188,6 +223,7 @@ async function main() {
           commit: test.commit,
           sample,
           passed: false,
+          ...invalid(phase, 'Evaluation phase failed'),
           error: String(redact(String(error))),
           durationMs: Date.now() - started,
         });
@@ -197,28 +233,41 @@ async function main() {
       }
     }
   }
-  const report = {
+  const report = await evidenceEnvelope({
     suite: 'repository',
-    workflow: settings.mode === 'run' ? (settings.workflow ?? 'standard') : undefined,
+    workflow: settings.mode === 'run' ? settings.workflow : undefined,
     evidence: settings.mode === 'validate' ? 'baseline-only' : 'model-run',
-    provider: settings.mode === 'run' ? settings.config.provider : undefined,
-    model: settings.mode === 'run' ? settings.config.model : undefined,
-    runtime: process.version,
-    createdAt: new Date().toISOString(),
+    config: settings.mode === 'run' ? settings.config : undefined,
     limits:
       settings.mode === 'run'
-        ? { maxTokens: settings.maxTokens, maxDurationMs: 180000 }
-        : undefined,
-    successRate: results.filter((item) => item.passed).length / results.length,
+        ? {
+            maxTokens: settings.maxTokens,
+            maxDurationMs: 180000,
+            maxSteps: 50,
+            maxOutputTokens: settings.config.maxOutputTokens ?? 4096,
+          }
+        : {},
+    inputs: Object.fromEntries(selected.map((test) => [test.name, test])),
+    artifacts: [
+      'report.json',
+      ...results
+        .filter((result) => 'status' in result)
+        .flatMap((result) => [
+          `${result.case}-${result.sample}.task.json`,
+          `${result.case}-${result.sample}.diff`,
+        ]),
+    ],
     results,
-  };
+  });
   await writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2), {
     mode: 0o600,
   });
   console.log(`Repository report: ${directory}`);
   if (settings.mode === 'validate')
-    console.log('No model ran. Only baseline reproduction was validated.');
-  if (report.successRate !== 1) process.exitCode = 1;
+    console.log(
+      `No model ran. ${report.passed ? 'Only baseline reproduction was validated.' : 'Baseline validation failed; inspect invalid evidence in the report.'}`,
+    );
+  if (!report.passed) process.exitCode = 1;
 }
 // Keep imports side-effect free for tooling.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

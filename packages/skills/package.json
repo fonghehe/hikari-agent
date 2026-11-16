@@ -8,7 +8,7 @@
     "@hikari/agent-core": "workspace:*",
     "@hikari/agent-runtime": "workspace:*",
     "@hikari/sandbox": "workspace:*",
-    "zod": "^3.25.0",
-    "yaml": "^2.8.0"
+    "zod": "catalog:",
+    "yaml": "catalog:"
   }
 }

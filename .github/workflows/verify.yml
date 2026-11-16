@@ -54,6 +54,7 @@ jobs:
         with:
           name: failure-${{ matrix.os }}
           path: |
-            test-results
-            playwright-report
+            .artifacts/test-results
+            .artifacts/playwright-report
+          include-hidden-files: true
           retention-days: 7

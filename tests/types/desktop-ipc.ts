@@ -1,6 +1,6 @@
 // Compile-only regression tests, included by pnpm typecheck.
 import { expectTypeOf } from 'vitest';
-import type { Task } from '../../packages/agent-core/src';
+import type { Task } from '../../packages/agent-core/src/index';
 import type {
   DesktopAPI,
   DesktopInvokeArgs,
@@ -8,7 +8,7 @@ import type {
   DesktopInvokeHandler,
   DesktopInvokeRawArgs,
   DesktopInvokeResult,
-} from '../../packages/shared/src';
+} from '../../packages/shared/src/index';
 import type { RegisterHandler } from '../../apps/desktop/src/main/ipc/context';
 
 expectTypeOf<DesktopInvokeArgs<'workspace:read'>>().toEqualTypeOf<

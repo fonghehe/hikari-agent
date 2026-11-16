@@ -57,3 +57,11 @@ This option sends the searched document collection and project memories to your 
 ## Offline use
 
 Choose **Use offline demo** to try sample Q&A without a model or workspace. Existing demo conversations remain simulated when continued or retried. Connect Ollama or LM Studio to use a real local model offline, subject to its tool and image capabilities.
+
+## Optional reranking
+
+Model settings includes a separate **Reranking** section, disabled by default. Configure a model, full endpoint URL (for example `http://localhost:8000/rerank`) and optional API key. The endpoint must accept `POST {model, query, documents: string[], top_n}` and return `{results: [{index, relevance_score}]}` covering every requested candidate. HTTPS or localhost HTTP only; redirects are rejected. The default timeout is 15 seconds and the response limit is 2 MB. Results fall back explicitly to fused ranking on service failure. Keys use the same protected profile storage as model credentials and are not returned to the renderer. Reranking can be enabled independently of embeddings; both send reference text externally and are billed outside the chat budget.
+
+## Shared application execution
+
+All real desktop, CLI and worker requests now use `prepareAgentSession`, including work authorization, intent, layered memory and current project-source retrieval. The desktop supplies native interaction/storage adapters. See [the capability audit](architecture-upgrade.md), [packaging](packaging.md) and [API verification](provider-api-audit.md).

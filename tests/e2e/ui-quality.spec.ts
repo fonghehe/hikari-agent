@@ -3,9 +3,9 @@ import { createRequire } from 'node:module';
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { LocalPersistence } from '../../apps/desktop/src/main/persistence';
-import { TaskManager } from '../../packages/agent-runtime/src';
-import { translate } from '../../apps/desktop/src/renderer/i18n';
+import { LocalPersistence } from '../../apps/desktop/src/main/storage/persistence';
+import { TaskManager } from '../../packages/agent-runtime/src/index';
+import { translate } from '../../apps/desktop/src/renderer/shared/i18n/index';
 
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 
@@ -27,7 +27,7 @@ async function bounded(dialog: Locator) {
 }
 
 async function capture(page: Page, name: string) {
-  await page.screenshot({ path: `test-results/ui-${name}.png`, scale: 'css' });
+  await page.screenshot({ path: `.artifacts/test-results/ui-${name}.png`, scale: 'css' });
 }
 
 for (const language of ['en', 'zh-CN', 'ja'] as const) {

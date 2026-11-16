@@ -6,6 +6,8 @@ Connect hosted or local models, keep separate model profiles, and choose a devel
 
 Delegate focused tasks to isolated agents, configure approved lifecycle hooks and language servers, schedule recurring work, and resume persistent goals within a shared budget. The [automation and integration guide](docs/platform.md) covers plugins, conversation/code history, the VS Code extension, remote control, self-hosted execution workers and GitHub/CI review. Remote hosting and language servers require your own environment; see the guide for deployment and verification boundaries.
 
+The local service also provides [Superagent supervision](docs/superagent.md), adapted from DeepSeek’s public research design: explicit requests or observed written rules, immutable work mandates, persistent tickets, isolated execution turns and an attention-first review page. Start it with `pnpm agent serve`. Desktop, CLI and workers now share the same authorized session composition; see the [capability audit and architecture](docs/architecture-upgrade.md), [packaging](docs/packaging.md) and [provider API audit](docs/provider-api-audit.md).
+
 ## User guide
 
 English is the default documentation language. The same operation guides are available in Chinese and Japanese.
@@ -19,6 +21,8 @@ Start with [installation](docs/installation.md) and [your first task](docs/getti
 ## Developer guide
 
 The [Electron architecture](docs/electron-architecture.md) explains process boundaries, IPC domains and task execution. See [development and verification](docs/development.md) for build and test commands, and [data, memory and retrieval](docs/memory-and-storage.md) for SQLite inspection, checkpoints and retrieval limits. These pages are also available in Chinese and Japanese through the documentation language menu.
+
+The [repository map and dependency rules](docs/architecture-upgrade.md#repository-layout-and-dependency-rules) describe runtime domains, desktop features and grouped tests. Generated reports, staging and releases live under `.artifacts/`; `pnpm clean:build`, `pnpm clean:reports` and `pnpm clean:cache` preview cleanup targets before `--apply`.
 
 ## Open the app from source
 

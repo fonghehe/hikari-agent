@@ -9,10 +9,10 @@
   },
   "dependencies": {
     "@hikari/agent-core": "workspace:*",
-    "drizzle-orm": "^0.44.0",
-    "pg": "^8.16.0"
+    "drizzle-orm": "catalog:",
+    "pg": "catalog:"
   },
   "devDependencies": {
-    "@types/pg": "^8.15.0"
+    "@types/pg": "catalog:"
   }
 }

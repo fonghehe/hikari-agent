@@ -63,13 +63,12 @@ DOM クリックだけでは、ネイティブウィンドウの入力判定や 
 ## ビルドと配布用パッケージ
 
 ```sh
-pnpm --filter @hikari/desktop exec playwright install chromium
 pnpm desktop:pack
 pnpm test:package
 pnpm desktop:dist
 ```
 
-`desktop:pack` はアプリのディレクトリを、`desktop:dist` はインストーラーを `apps/desktop/release/` に作成します。コード、ネイティブモジュール、ブラウザー資産を準備し、公開は行いません。main と添付 Worker は esbuild で CommonJS に、preload は別出力に、renderer は Vite でビルドされます。
+`desktop:pack` はアプリのディレクトリを、`desktop:dist` はインストーラーを `.artifacts/releases/desktop/` に作成します。コード、ネイティブモジュール、ブラウザー資産を準備し、公開は行いません。main と添付 Worker は esbuild で CommonJS に、preload は別出力に、renderer は Vite でビルドされます。
 
 `test:package` は一時的な専用データディレクトリでパッケージを起動し、ネイティブモジュール、オフライン OCR、同梱ブラウザー、ターミナルとサンドボックス実行を確認します。検証とリリースの CI にも組み込み済みです。Linux では `xvfb-run -a pnpm test:package` を使用します。正式な署名、公証や外部モデルの品質は検証しません。
 
@@ -112,3 +111,29 @@ Pages ワークフローは公開先の base を読み取ります。サブパ�
 表示用の更新は 100 ミリ秒の永続化バッファを共有し、タスクごとの保留イベント数は最大 2,000 件です。ツールの境界、チェックポイント、読み取り、終了時には同期的に保存します。プロセスが突然終了した場合、未保存の表示末尾は失われることがあります。永続化の失敗は実行を停止させ、ライフサイクルの副作用の前に保存状態を確認します。後の書き込み成功で失敗を隠しません。表示リスナーの例外は個別に隔離します。
 
 関連テストは `file-persistence-batching`、`resource-scope`、`execution-lifecycle`、`request-traces`、`parallel-reads`、`context-budget`、`agent-control` です。
+
+## 再現可能なオフライン計測
+
+モデル呼び出しや依存のダウンロードなしで実行します。
+
+```sh
+node scripts/benchmarks/renderer.mjs 100 30
+TSX_DISABLE_CACHE=1 node --import tsx scripts/benchmarks/runtime.ts
+TSX_DISABLE_CACHE=1 node --import tsx scripts/benchmarks/runtime.ts --ref=a291620
+```
+
+renderer は実際の本番 UI をメモリ内で profiling し、架空タスクと遮断済みリクエストを使用します。既存 Chrome が既定で、`HIKARI_TEST_BROWSER_CHANNEL` で別の導入済みチャネルを選択できます。この場面では編集用 Worker は使いません。App/Timeline の描画、commit 数と p95、store 通知、模擬一覧 IPC の件数とバイト数を記録します。同じタスク数・フレーム数で10、100、1,000タスクを比較してください。Electron 本来の IPC 遅延や実モデル性能を測るものではありません。
+
+runtime は5回予熱し、追跡追加30回・スキル照会10回の p50/p95 を表示します。`--ref` は指定 Git 版の追跡追加だけに適用し、スキルは常に作業ツリーを使用します。100個の架空60 KBスキルについてメタデータ探索・互換 `list()`・選択本文読込を測ります。追跡は各20,000/400,000文字を16件保持し、永続化 I/O を含みません。
+
+macOS arm64、Node 24.14.1、Chrome 156 のローカル例では、100タスク・履歴2,000件・背景delta240件で App/Timeline の描画とcommitは各30回から0回、同期状態イベント240件の一覧取得は240回から1回、模擬転送量は78,229,920から325,958バイトになりました。前景deltaのcommit p95は4.2→4.4 msで、高速化を主張しません。約6.4 MB保持時の追跡追加p95は14.66→14.93 msです。重複エンコードを一回除去しましたが、この例は速度向上の証明ではありません。比較ではOS、ブラウザー、ランタイム、入力、予算、予熱を固定します。fixture、実モデル、リモート3 OS CIは別々の証拠です。
+
+## Superagent の検証
+
+`pnpm exec vitest run tests/runtime/superagent.test.ts tests/integration/superagent-host.test.ts` で認可、observe、購読、未読入力、引き継ぎ、ディレクトリ再利用、復旧を検証します。`pnpm exec playwright test tests/e2e/superagent.spec.ts` はローカルのスクリプトモデルで実際のページを検証します。loopback サーバーと一時プロジェクトを使い、有料モデルや公開操作は使いません。[設計範囲](superagent.md)も参照してください。
+
+## 共有実行
+
+通常のデスクトップ・CLI・Worker は `prepareAgentSession` で認可、意図、記憶と現在のソース検索を共有します。デスクトップはネイティブ UI と保存のアダプターです。[能力一覧](architecture-upgrade.md)、[パッケージ](packaging.md)、[API 監査](provider-api-audit.md)を参照してください。
+
+復旧、記憶の承認、タスク基準、成果と費用の詳細は [Agent の信頼性と評価](agent-readiness.md) を参照してください。

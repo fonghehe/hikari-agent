@@ -7,13 +7,13 @@ import { attachmentLimits } from '@hikari/shared';
 import { demoWorkspace } from '@hikari/model-provider';
 import { GitService, WorktreeService } from '@hikari/git';
 import { WorktreeDelivery, FileChangeService } from '@hikari/tools';
-import { SidebarSections } from '../sidebar-sections';
+import { SidebarSections } from '../tasks/sidebar-sections';
 import { id, type DesktopContext, type RegisterHandler } from './context';
 import {
   copyConversation,
   conversationMarkdown,
   conversationAnswer,
-} from '../conversation-actions';
+} from '../tasks/conversation-actions';
 
 export function registerTasksHandlers(handle: RegisterHandler, context: DesktopContext) {
   const { host, persistence, workspaceState } = context;

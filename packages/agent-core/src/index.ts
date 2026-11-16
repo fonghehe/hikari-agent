@@ -2,6 +2,7 @@ import type { RunOptions, TaskPlan, RunSummary } from './task-controls';
 import { redactText, sensitiveField } from './data-policy';
 export * from './task-controls';
 export * from './extensions';
+export * from './superagent';
 import type { ZodType, ZodTypeDef } from 'zod';
 export const states = [
   'idle',
@@ -22,6 +23,7 @@ export type Permission =
   | 'filesystem.read'
   | 'filesystem.write'
   | 'filesystem.delete'
+  | 'memory.write'
   | 'shell.execute'
   | 'shell.network'
   | 'shell.system'
@@ -126,8 +128,18 @@ export interface Task {
   navigation?: { pinned?: boolean; unread?: boolean; section?: string };
   imported?: boolean;
   runOptions?: RunOptions;
+  /** Present for execution assigned by the Superagent control plane. */
+  mandate?: import('./superagent').Mandate;
+  workReport?: import('./superagent').WorkReport;
+  workItem?: { ticketId: string; assignmentId: string; stage: string };
+  intent?: {
+    kind: 'conversation' | 'research' | 'plan' | 'implementation' | 'review';
+    origin: 'request-context' | 'model';
+    reason: string;
+  };
   plan?: TaskPlan;
   runSummary?: RunSummary;
+  delivery?: import('./task-controls').TaskDelivery;
   pendingQuestion?: UserQuestion;
   resumable?: boolean;
   goal?: {
@@ -167,6 +179,18 @@ export interface Tool<T = unknown> {
   permission: Permission;
   /** Explicit opt-in for independent, side-effect-free filesystem inspection. */
   parallelSafe?: boolean;
+  /** Trusted adapter metadata, never inferred from remote tool descriptions. */
+  recovery?: {
+    effect: 'read-only' | 'idempotent' | 'side-effect';
+    /** Inspect state only. This callback must never repeat the original action. */
+    reconcile?(
+      input: T,
+      context: ToolContext,
+    ): Promise<{
+      state: 'succeeded' | 'not-applied' | 'unknown';
+      detail: string;
+    }>;
+  };
   permissionFor?(input: T): Permission;
   jsonSchema?: Record<string, unknown>;
   execute(input: T, context: ToolContext): Promise<ToolResult>;

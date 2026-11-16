@@ -5,6 +5,11 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import { z } from 'zod';
 import { ToolRegistry } from '@hikari/agent-runtime';
 import type { EventSink } from '@hikari/agent-core';
+export type BrowserFactory = () => Promise<{
+  browser: Browser;
+  page: Page;
+  close(): Promise<void>;
+}>;
 export class BrowserService {
   private browser?: Browser;
   private context?: BrowserContext;
@@ -12,13 +17,34 @@ export class BrowserService {
   private screenshotData?: string;
   private lastURL = '';
   private generation = 0;
+  private release?: () => Promise<void>;
   constructor(
     private events: EventSink,
     private channel?: 'chrome' | 'msedge',
+    private factory?: BrowserFactory,
   ) {}
   private async getPage() {
     if (this.page && !this.page.isClosed()) return this.page;
     const generation = this.generation;
+    if (this.factory) {
+      const runtime = await this.factory();
+      if (generation !== this.generation) {
+        await runtime.close();
+        throw new Error('Browser operation cancelled');
+      }
+      this.browser = runtime.browser;
+      this.context = runtime.page.context();
+      this.page = runtime.page;
+      this.release = () => runtime.close();
+      this.page.setDefaultTimeout(10000);
+      this.page.on('dialog', (dialog) => void dialog.dismiss());
+      await this.context.route('**/*', (route) =>
+        ['http:', 'https:', 'data:', 'blob:'].includes(new URL(route.request().url()).protocol)
+          ? route.continue()
+          : route.abort(),
+      );
+      return this.page;
+    }
     let executablePath: string | undefined;
     if (
       process.resourcesPath &&
@@ -114,8 +140,14 @@ export class BrowserService {
   }
   async close() {
     this.generation++;
-    await this.context?.close().catch(() => {});
-    await this.browser?.close().catch(() => {});
+    if (this.release) {
+      const close = this.release;
+      this.release = undefined;
+      await close();
+    } else {
+      await this.context?.close().catch(() => {});
+      await this.browser?.close().catch(() => {});
+    }
     this.page = undefined;
     this.browser = undefined;
     this.context = undefined;
@@ -126,8 +158,9 @@ export function registerBrowserTools(
   events: EventSink,
   supportsVision = false,
   searchUrl?: string,
+  factory?: BrowserFactory,
 ) {
-  const browser = new BrowserService(events);
+  const browser = new BrowserService(events, undefined, factory);
   const add = <T>(
     name: string,
     description: string,

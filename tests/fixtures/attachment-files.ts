@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
 export async function imageFixture() {
-  const sharp = require('sharp') as typeof import('../../apps/desktop/node_modules/sharp').default;
+  const sharp = require('sharp') as typeof import('sharp').default;
   return sharp({ create: { width: 80, height: 40, channels: 3, background: '#657ced' } })
     .png()
     .toBuffer();

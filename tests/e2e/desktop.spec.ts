@@ -43,7 +43,7 @@ test('desktop starts with secure preload and empty workspace', async () => {
     expect(
       await window.evaluate(() => typeof (globalThis as Record<string, unknown>).require),
     ).toBe('undefined');
-    await window.screenshot({ path: 'test-results/desktop.png' });
+    await window.screenshot({ path: '.artifacts/test-results/desktop.png' });
   } finally {
     await app.close();
   }
@@ -56,7 +56,7 @@ test('real IPC runs tools and preserves follow-up context in the same worktree',
   const path = await import('node:path');
   const root = await mkdtemp(path.join(tmpdir(), 'forge-e2e-'));
   await writeFile(path.join(root, 'sample.txt'), 'fixture file content');
-  const { runProcess, LogicalSandboxProvider } = await import('../../packages/sandbox/src');
+  const { runProcess, LogicalSandboxProvider } = await import('../../packages/sandbox/src/index');
   const options = {
     cwd: root,
     env: new LogicalSandboxProvider().environment(),
@@ -172,7 +172,7 @@ test('real IPC runs tools and preserves follow-up context in the same worktree',
     await expect(page.getByRole('button', { name: '.git/index', exact: true })).toHaveCount(0);
     expect(turns[0]!.worktree).toBeTruthy();
     expect(turns[1]!.worktree).toBe(turns[0]!.worktree);
-    await page.screenshot({ path: 'test-results/task-flow.png' });
+    await page.screenshot({ path: '.artifacts/test-results/task-flow.png' });
   } finally {
     await app.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -312,7 +312,7 @@ test('agent fixes a failing test through approval, patch, retest, diff undo and 
     await openWorkspaceTool(page, 'diff');
     await page.getByRole('button', { name: 'sample.txt', exact: true }).click();
     await expect(page.locator('.monaco-diff-editor')).toBeVisible();
-    await page.screenshot({ path: 'test-results/repair-diff.png' });
+    await page.screenshot({ path: '.artifacts/test-results/repair-diff.png' });
     await expect(page.getByRole('button', { name: 'Reject', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Accept', exact: true }).click();
     await expect(page.getByText('Accepted', { exact: true })).toBeVisible();
@@ -454,7 +454,7 @@ test('Plan mode prevents writes, persists a plan and carries it into an explicit
     );
     expect(leaked).toBe(false);
     expect(await readFile(path.join(root, 'sample.txt'), 'utf8')).toBe('unchanged');
-    await page.screenshot({ path: 'test-results/plan-mode.png' });
+    await page.screenshot({ path: '.artifacts/test-results/plan-mode.png' });
     await page.getByRole('button', { name: 'Use plan in Execute', exact: true }).click();
     await page.getByRole('button', { name: 'Task options', exact: true }).click();
     await expect(page.getByLabel('Agent mode')).toHaveValue('execute');

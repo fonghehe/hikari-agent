@@ -10,6 +10,7 @@ import {
   type SandboxProvider,
 } from '@hikari/sandbox';
 import { prepareCapabilities, pluginMCP } from './capabilities';
+import type { BrowserFactory } from '@hikari/tools';
 
 type ExecutionOptions = Omit<Parameters<typeof prepareCapabilities>[0], 'changes' | 'sandbox'> & {
   changes?: Parameters<typeof prepareCapabilities>[0]['changes'];
@@ -18,6 +19,7 @@ type ExecutionOptions = Omit<Parameters<typeof prepareCapabilities>[0], 'changes
   searchUrl?: string;
   mcpHeaders?(name: string): Record<string, string> | undefined;
   publishDiff?: boolean;
+  browserFactory?: BrowserFactory;
 };
 
 /** Common capability composition for desktop, CLI and execution workers. */
@@ -52,6 +54,7 @@ export async function prepareExecution(options: ExecutionOptions) {
       options.events,
       options.supportsVision ?? false,
       options.searchUrl,
+      options.browserFactory,
     );
     resources.defer(() => browser.close());
     const runtime = options.changes
